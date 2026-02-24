@@ -278,7 +278,7 @@ class SelectManager:
 
         values = []
         
-        if self._where_conditions or self.where_conditions is not None:
+        if self._where_conditions or self._where_conditions is not None:
             where_sql, where_values = self._where_conditions.to_sql()
             query += f" WHERE {where_sql}"
             values.extend(where_values if isinstance(where_values, list) else [where_values])

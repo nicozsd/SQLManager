@@ -6,8 +6,6 @@ from queue import Queue, Empty
 from typing import Union, TypeAlias
 from ..CoreConfig import CoreConfig
 
-_Connection: TypeAlias = Union['database_connection', 'Transaction']
-
 class _TTS_Manager:
     '''
     Gerenciador de níveis de transação (TTS)
@@ -116,6 +114,31 @@ class Transaction (_TTS_Manager, _Consult_Manager):
             self._db._return_connection(self._connection)
             self._connection = None
         return False
+
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #1 / made by: Nicolas Santos / created: 23/02/2026 '''
+    @property
+    def transaction(self):
+        """
+        Retorna um context manager que cria uma "transação filha" (nested).
+        Uso: `with trs.transaction as trs:` — ele aumenta o nível TTS e
+        faz commit/abort local (mas usa a mesma conexão do pai).
+        """
+        parent = self
+
+        class _NestedTransaction:
+            def __enter__(self):
+                parent.ttsbegin()
+                return parent
+
+            def __exit__(self, exc_type, exc_value, tb):
+                if exc_type:
+                    parent.ttsabort()
+                else:
+                    parent.ttscommit()
+                return False
+
+        return _NestedTransaction()
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #1 / made by: Nicolas Santos / created: 23/02/2026 '''    
 
 class database_connection (_TTS_Manager, _Consult_Manager):
     '''

@@ -8,11 +8,11 @@ class FieldCondition:
     Também suporta uso em if/while através de __bool__
     '''
     def __init__(self, field_name: str, operator: str, value: Any, table_alias: Optional[str] = None, left_value: Any = None):
-        self.field_name = field_name
-        self.operator = operator
-        self.value = value
+        self.field_name  = field_name
+        self.operator    = operator
+        self.value       = value
         self.table_alias = table_alias
-        self.left_value = left_value  # Valor do campo (lado esquerdo da comparação)
+        self.left_value  = left_value  # Valor do campo (lado esquerdo da comparação)
     
     def __and__(self, other: 'FieldCondition') -> 'BinaryExpression':
         return BinaryExpression(self, 'AND', other)
