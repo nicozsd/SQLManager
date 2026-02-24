@@ -116,12 +116,11 @@ class Transaction (_TTS_Manager, _Consult_Manager):
         return False
 
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #1 / made by: Nicolas Santos / created: 23/02/2026 '''
-    @property
     def transaction(self):
         """
         Retorna um context manager que cria uma "transação filha" (nested).
-        Uso: `with trs.transaction as trs:` — ele aumenta o nível TTS e
-        faz commit/abort local (mas usa a mesma conexão do pai).
+        Uso: `with trs.transaction() as trs:` ou `with trs.transaction() as trs:` —
+        ele aumenta o nível TTS e faz commit/abort local (usa a mesma conexão do pai).
         """
         parent = self
 
