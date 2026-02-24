@@ -85,6 +85,12 @@ pip install --upgrade --force-reinstall git+https://github.com/nickzsd/SQLManage
 
 ## Patch Notes
 
+### Issues 
+
+#### Remodelagem do tableController
+> Issue: [#1-TableController Remodel](https://github.com/nickzsd/SQLManager/issues/1)  
+> Solution [Development document](SQLManager/documents/Issues/Issue1_Note.md)
+
 ### Versão 2.0.0 (12/01/2026)
 
 **BREAKING CHANGES:**
