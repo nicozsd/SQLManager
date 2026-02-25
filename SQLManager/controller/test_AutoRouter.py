@@ -1,4 +1,4 @@
-''' [BEGIN CODE] Project: SQLManager / made by: {Matheus} / created: {25/02/2026} '''
+''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 '''
 
 import unittest
 from unittest.mock import MagicMock, patch
@@ -10,7 +10,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, os.path.dirname(parent_dir))
 
-from SQLManager.controller.AutoRouter import AutoRouter
+from SQLManager.controller.RouterController import AutoRouter
 from SQLManager.CoreConfig import CoreConfig
 from SQLManager.controller.TableController import TableController
 
@@ -224,4 +224,4 @@ class TestAutoRouter(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
-''' [END CODE] Project: SQLManager / made by: {Matheus} / created: {25/02/2026} '''
+''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 '''

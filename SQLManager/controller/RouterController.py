@@ -1,4 +1,4 @@
-''' [BEGIN CODE] Project: SQLManeger / made by: {Matheus} / created: {25/02/2026} '''
+''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 '''
 
 from typing import Any, Dict, List, Optional, Union
 import importlib
@@ -351,3 +351,4 @@ class AutoRouter:
             except:
                 pass
         return data
+''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 '''

@@ -1,4 +1,4 @@
-# AutoRouter - Rotas Automáticas Dinâmicas
+# Issues [#3-AutoRouterSystem](https://github.com/nickzsd/SQLManager/issues/3) - SQLManager
 
 O **AutoRouter** é um módulo inteligente do SQLManager que transforma automaticamente suas classes de Tabela (`TableController`) em endpoints de API RESTful.
 
