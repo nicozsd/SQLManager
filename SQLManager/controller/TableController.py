@@ -137,9 +137,12 @@ class TableController():
                     attr.value = value
                 return
         
-        # Se está criando um novo EDT/Enum, armazena o nome do campo nele
+        # Se está criando um novo EDT/Enum, armazena o nome do campo e alias da tabela nele
         if isinstance(value, (EDTController, BaseEnumController)):
             value._field_name = name
+            ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
+            value._table_alias = self.source_name  # Injeta o alias da tabela
+            ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
         
         object.__setattr__(self, name, value)    
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
