@@ -39,8 +39,19 @@ git+https://github.com/nickzsd/SQLManager.git
 > DB_PASSWORD=senha123
 > DB_DRIVER="DRIVER"
 > ```
+> **Se não houver `.env`**  
+> Utilizar os parametros diretamento no comando CMD/Powershell
+>**Parametros:**  
+>- `--server`: Servidor do banco de dados.
+> - `--database`: Banco de dados.
+> - `---user`: Usuário do banco de dados.
+> - `--password`: Senha do banco de dados.
+> - `--driver`: Driver ODBC para SQL Server (ex: 'ODBC Driver 17 for SQL Server').
+>```Powershell
+> python -m SQLManager._model._model_update --server xxx --database xxx --user xxx --password xxx
+>``` 
+> NOTA: O SQLManager será instalado no ambiente virtual (.venv) do seu projeto, não na pasta src/.
 
-NOTA: O SQLManager será instalado no ambiente virtual (.venv) do seu projeto, não na pasta src/
 
 ## Passo Obrigatório: Gerar os Modelos
 
@@ -95,6 +106,9 @@ pip install --upgrade --force-reinstall git+https://github.com/nickzsd/SQLManage
 
 > Issue: [#4-ViewController](https://github.com/nickzsd/SQLManager/issues/4)  
 > Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
+
+> Issue: [#6-UpdateModel](https://github.com/nickzsd/SQLManager/issues/6)  
+> Solution [Development document](SQLManager/documents/Issues/Issue6_Note.md)
 
 ### Versão 2.0.0 (12/01/2026)
 
