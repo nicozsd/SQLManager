@@ -33,6 +33,7 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "pyodbc>=4.0.0",
+        "python-dotenv>=0.19.0",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",
