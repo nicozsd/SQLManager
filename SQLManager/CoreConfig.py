@@ -32,7 +32,10 @@ class CoreConfig:
     _db_driver: str = "ODBC Driver 18 for SQL Server"
     
     _custom_regex: Dict[str, str] = {}
+
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
     _router_config: Dict[str, Any] = {}
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
     
     _is_configured: bool = False
     
@@ -133,6 +136,7 @@ class CoreConfig:
         """
         cls._custom_regex.update(regex_dict)
     
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
     @classmethod
     def configure_router(cls, config: Dict[str, Any]):
         """
@@ -145,15 +149,17 @@ class CoreConfig:
             CoreConfig.configure_router({
                 'enable_dynamic_routes': True,
                 'url_suffix': 'api/v1',
-                'exclude_tables': ['SysLog']
+                'exclude_tables': ['SysLog'],
+                'app': my_flask_app
             })
         """
         cls._router_config = config
-
+    
     @classmethod
     def get_router_config(cls) -> Dict[str, Any]:
         """Retorna a configuração atual do AutoRouter"""
         return cls._router_config
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
     @classmethod
     def get_regex(cls, regex_id: str) -> Optional[str]:
@@ -190,6 +196,7 @@ class CoreConfig:
         cls._router_config = {}
         cls._is_configured = False
     
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
     @classmethod
     def configure_from_dict(cls, config: Dict[str, Any]):
         r"""
@@ -204,6 +211,12 @@ class CoreConfig:
                 'db_database': 'MyDB',
                 'db_user': 'admin',
                 'db_password': 'pass123',
+                'router_config': {
+                    'enable_dynamic_routes': True,
+                    'url_suffix': 'api/v1',
+                    'exclude_tables': ['SysLog'],
+                    'app': my_flask_app
+                },
                 'custom_regex': {
                     'CompanyEmail': r'^[\w\.-]+@mycompany\.com$'
                 }
@@ -223,4 +236,5 @@ class CoreConfig:
             cls.register_multiple_regex(config['custom_regex'])
             
         if 'router_config' in config:
-            cls.configure_router(config['router_config'])
+            cls.configure_router(config['router_config'])        
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''

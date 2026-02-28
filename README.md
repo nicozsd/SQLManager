@@ -58,8 +58,19 @@ git+https://github.com/nickzsd/SQLManager.git
 > DB_PASSWORD=senha123
 > DB_DRIVER="DRIVER"
 > ```
+> **Se não houver `.env`**  
+> Utilizar os parametros diretamento no comando CMD/Powershell
+>**Parametros:**  
+>- `--server`: Servidor do banco de dados.
+> - `--database`: Banco de dados.
+> - `---user`: Usuário do banco de dados.
+> - `--password`: Senha do banco de dados.
+> - `--driver`: Driver ODBC para SQL Server (ex: 'ODBC Driver 17 for SQL Server').
+>```Powershell
+> python -m SQLManager._model._model_update --server xxx --database xxx --user xxx --password xxx
+>``` 
+> NOTA: O SQLManager será instalado no ambiente virtual (.venv) do seu projeto, não na pasta src/.
 
-NOTA: O SQLManager será instalado no ambiente virtual (.venv) do seu projeto, não na pasta src/
 
 ## Passo Obrigatório: Gerar os Modelos
 
@@ -113,11 +124,30 @@ pip install --upgrade --force-reinstall git+https://github.com/nickzsd/SQLManage
 > Issue: [#1-TableController Remodel](https://github.com/nickzsd/SQLManager/issues/1)  
 > Solution [Development document](SQLManager/documents/Issues/Issue1_Note.md)
 
-> Issue: [#4-ViewController](https://github.com/nickzsd/SQLManager/issues/4)  
-> Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
+> Issue: [#3-AutoRoutes](https://github.com/nickzsd/SQLManager/issues/3)  
+> Solution [Development document](SQLManager/documents/Issues/Issue3_Note.md)
 
 > Issue: [#4-ViewController](https://github.com/nickzsd/SQLManager/issues/4)  
 > Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
+
+> Issue: [#6-UpdateModel](https://github.com/nickzsd/SQLManager/issues/6)  
+> Solution [Development document](SQLManager/documents/Issues/Issue6_Note.md)
+
+### Versão 4.0.0 (27/02/2026)
+
+**AutoRouter - Refatoração do Decorator:**
+- ✅ Decorator `_pre_handle` refatorado com `inspect.signature` para mapeamento robusto de argumentos
+- ✅ Suporte a argumentos nomeados e posicionais
+- ✅ Injeção automática de dependências (`_table`, `_table_config`)
+- ✅ Cache de configurações de tabelas (uppercase normalizado)
+- ✅ Método `_get_table_class_by_name()` separado para reutilização
+- ✅ Testes unitários completos ([test_AutoRouter.py](SQLManager/tests/test_AutoRouter.py))
+- ✅ Documentação expandida no [Issue3_Note.md](SQLManager/documents/Issues/Issue3_Note.md)
+
+**Arquivos modificados:**
+- `SQLManager/controller/RouterController.py`
+- `SQLManager/tests/test_AutoRouter.py`
+- `SQLManager/__init__.py`
 
 ### Versão 2.0.0 (12/01/2026)
 
@@ -191,7 +221,23 @@ Para documentação detalhada da classe connection, métodos e exemplos, consult
 
 ### AutoRouter - API REST
 
-Para documentação completa sobre endpoints, filtros, paginação e geração de coleção Postman, consulte:
+O **AutoRouter** é um sistema de rotas automáticas que transforma suas classes `TableController` em endpoints RESTful completos, eliminando a necessidade de criar controllers manuais para operações CRUD padrão.
+
+**Características principais:**
+- **Zero Boilerplate:** Crie a tabela no banco, gere os modelos, e as rotas já existem
+- **Validação Automática:** EDTs e Enums são validados antes de tocar no banco
+- **Filtros Avançados:** Suporte nativo a operadores (`_gt`, `_like`, `_lte`, etc.)
+- **Coleção Postman:** Geração automática de documentação para testes
+- **Decorator Robusto:** Usa `inspect.signature` para mapeamento type-safe de argumentos
+
+**Arquitetura:**
+- Utiliza **Roteamento Dinâmico** baseado em Reflexão (Introspection)
+- Padrão **Front Controller** para processamento centralizado
+- **Convenção sobre Configuração** para setup mínimo
+
+**Versão 4.0 (27/02/2026):** Decorator `_pre_handle` refatorado com `inspect.signature` para mapeamento robusto de argumentos nomeados e posicionais, com injeção automática de dependências (`_table`, `_table_config`).
+
+**Documentação completa:**
 
 - [SQLManager/documents/Issues/Issue3_Note.md](SQLManager/documents/Issues/Issue3_Note.md)
 
@@ -201,7 +247,7 @@ Para documentação completa sobre endpoints, filtros, paginação e geração d
 
 O `CoreConfig` é a classe estática responsável por centralizar toda a configuração do SQLManager. Ele atua como uma ponte entre o seu projeto e o núcleo da biblioteca, permitindo definir conexões de banco de dados, regras de validação customizadas e comportamento de rotas sem modificar o código fonte do pacote.
 
-### 🎯 Funcionalidades Principais
+### Funcionalidades Principais
 
 1.  **Configuração de Banco de Dados:** Define credenciais e driver de conexão.
 2.  **Registro de Regex (EDTs):** Adiciona padrões de validação customizados para seus tipos de dados.

@@ -4,14 +4,14 @@ O **AutoRouter** é um módulo inteligente do SQLManager que transforma automati
 
 Ele elimina a necessidade de criar controllers, rotas e serviços manuais para operações CRUD (Create, Read, Update, Delete) padrão, permitindo que você exponha seu banco de dados de forma segura e imediata.
 
-## 🎯 Objetivo e Benefícios
+## Objetivo e Benefícios
 
 - **Zero Boilerplate:** Crie a tabela no banco, rode o gerador de modelos, e a rota já existe.
 - **Padronização:** Todas as respostas seguem o mesmo formato JSON, com códigos HTTP corretos (200, 201, 400, 404, 500).
 - **Segurança:** Validação automática de tipos de dados (EDTs) e Enums antes de tocar no banco.
 - **Filtros Poderosos:** Suporte nativo a filtros complexos via URL (maior que, contém, diferente, etc.).
 
-## ⚠️ Quando Usar vs. Quando NÃO Usar
+## Quando Usar vs. Quando NÃO Usar
 
 | Use o AutoRouter quando... | NÃO use o AutoRouter quando... |
 | :--- | :--- |
@@ -21,7 +21,7 @@ Ele elimina a necessidade de criar controllers, rotas e serviços manuais para o
 
 ---
 
-## ⚙️ Ativação e Configuração
+## Ativação e Configuração
 
 O AutoRouter é **OPCIONAL**. Para ativá-lo, você deve configurar o `CoreConfig` na inicialização da sua aplicação.
 
@@ -179,7 +179,7 @@ O AutoRouter sempre retorna um JSON padronizado.
 
 ---
 
-## 🧠 Metodologia e Arquitetura
+## Metodologia e Arquitetura
 
 Com base na análise do código fonte e da documentação fornecida, o **AutoRouter** utiliza a metodologia de **Roteamento Dinâmico** (Dynamic Routing) fundamentada em **Reflexão** (Reflection/Introspection) e **Convenção sobre Configuração** (Convention over Configuration).
 
@@ -202,7 +202,7 @@ Aqui está o detalhamento técnico dessa abordagem:
 
 ---
 
-## � Testes Unitários
+## Testes Unitários
 
 Abaixo está um exemplo completo de como testar o `AutoRouter` utilizando `unittest` e `mock`. Este teste cobre cenários de sucesso (CRUD) e tratamento de erros (404, 405, etc.), simulando o comportamento do banco de dados.
 
@@ -281,7 +281,7 @@ class TestAutoRouter(unittest.TestCase):
 
 ---
 
-## 🌐 Estrutura de URLs e Exemplos Práticos
+## Estrutura de URLs e Exemplos Práticos
 
 Com base na estrutura do AutoRouter definida no seu código (`RouterController.py`) e na documentação, aqui estão exemplos práticos de como as URLs são formadas.
 
@@ -316,17 +316,14 @@ Se você definiu uma rota customizada no `CoreConfig` (ex: para limpar logs anti
 
 *   **Configuração:** `{"route": "clear_old", ...}`
 *   **URL:** `DELETE http://localhost:5000/manager/Logs/clear_old`
-```
 
----
-
-## 📝 Geração de Coleção Postman
+## Geração de Coleção
 
 O AutoRouter pode gerar automaticamente uma coleção Postman (v2.1) para todos os endpoints CRUD dinâmicos, facilitando a documentação e o teste da sua API.
 
 ### Como Gerar a Coleção
 
-Você pode expor um endpoint na sua aplicação (ex: Flask, FastAPI) que chama o método `generate_postman_collection` do `AutoRouter`.
+Você pode expor um endpoint na sua aplicação (ex: Flask, FastAPI) que chama o método `generate_collection` do `AutoRouter`.
 
 ```python
 # Exemplo em uma aplicação Flask
@@ -355,12 +352,12 @@ except Exception as e:
 
 router = AutoRouter(db)
 
-@app.route('/generate-postman-collection', methods=['GET'])
+@app.route('/generate-collection', methods=['GET'])
 def get_postman_collection():
-    # A URL base será a da sua aplicação. O método generate_postman_collection
+    # A URL base será a da sua aplicação. O método generate_collection
     # adicionará o sufixo configurado (ex: /api) automaticamente.
     # Ex: se a app roda em http://localhost:5000, a base_url será http://localhost:5000
-    collection = router.generate_postman_collection(base_url=request.host_url.rstrip('/'))
+    collection = router.generate_collection(base_url=request.host_url.rstrip('/'))
     return jsonify(collection)
 
 if __name__ == '__main__':
@@ -374,10 +371,7 @@ if __name__ == '__main__':
     CoreConfig.configure_router({
         "enable_dynamic_routes": True,
         "url_suffix": "api", # Define o sufixo para as URLs geradas no Postman
-        "exclude_tables": ["SysLog"],
-        "tables": {
-            "Products": {"allowed_methods": ["GET", "POST", "PATCH", "DELETE"]}
-        }
+        "exclude_tables": ["SysLog"]        
     })
     app.run(debug=True, port=5000)
 ```
@@ -402,7 +396,7 @@ CoreConfig.configure_router({
 
 ---
 
-## 🔍 Exemplo de Verificação de URL (Debug)
+## Exemplo de Verificação de URL (Debug)
 
 Para verificar como o `AutoRouter` processa uma URL sem precisar subir um servidor web, você pode chamar diretamente o método `handle_request`.
 
@@ -448,3 +442,110 @@ response = router.handle_request(
 )
 print(f"Status: {response.get('status')}")
 ``` 
+
+---
+
+## Refatoração do Decorator `_pre_handle` (v4.0 - 27/02/2026)
+
+### Motivação
+Na versão inicial, o decorator `_pre_handle` usava uma lógica manual para extrair argumentos (`args[0]`, `kwargs[...]`), o que era frágil e não type-safe. A refatoração implementou o uso de `inspect.signature` do Python para tornar o mapeamento de argumentos robusto e confiável.
+
+### O Que Mudou
+
+**Antes (v1.0):**
+```python
+def _pre_handle(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        def get_args(_args: str):
+            args_info = None
+            if _args in kwargs:
+                args_info = kwargs[_args]
+            else:
+                args_info = args[0] if len(args) > 0 else None
+            return args_info
+
+        method = get_args('method')
+        table_name = get_args('table_name')
+        # ... validações ...
+        return func(*args, **kwargs)
+    return wrapper
+```
+
+**Problemas:**
+- ❌ Não funcionava corretamente com `self` ausente
+- ❌ Mapeamento frágil de argumentos posicionais vs nomeados
+- ❌ Não validava assinatura da função
+- ❌ Difícil de manter e estender
+
+**Depois (v4.0):**
+```python
+def _pre_handle(func):
+    sig = inspect.signature(func)  # Captura assinatura ANTES
+    
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Mapeia argumentos usando a assinatura
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        
+        # Extrai com segurança
+        self = bound.arguments.get('self')
+        method = bound.arguments.get('method', '').upper()
+        table_name = bound.arguments.get('table_name', '')
+        
+        # ... validações usando self ...
+        
+        # Injeta objetos preparados
+        kwargs['_table'] = table
+        kwargs['_table_config'] = table_config
+        
+        return func(*args, **kwargs)
+    return wrapper
+```
+
+**Benefícios:**
+- ✅ Type-safe: valida assinatura automaticamente
+- ✅ Funciona com argumentos nomeados e posicionais
+- ✅ Extração robusta de `self` e outros parâmetros
+- ✅ Injeção de dependências (`_table`, `_table_config`)
+- ✅ Fácil de testar e manter
+
+### Exemplo de Uso
+
+O decorator valida e prepara tudo antes de chamar `handle_request`:
+
+```python
+# Chamada com argumentos nomeados
+response = router.handle_request(
+    method='GET',
+    table_name='Products',
+    path_parts=['123']
+)
+
+# Chamada com argumentos posicionais
+response = router.handle_request('GET', 'Products', ['123'])
+
+# Ambos funcionam! O decorator mapeia corretamente usando inspect.signature
+```
+
+### Testes
+
+A refatoração foi validada com testes unitários completos em [`test_AutoRouter.py`](../../tests/test_AutoRouter.py):
+
+```python
+def test_decorator_maps_arguments_correctly(self):
+    """Valida que inspect.signature mapeia args/kwargs"""
+    response = self.router.handle_request(method="GET", table_name="Products")
+    self.assertIsInstance(response, dict)
+    
+def test_decorator_with_positional_arguments(self):
+    """Valida argumentos posicionais"""
+    response = self.router.handle_request("GET", "Products", [], {}, {})
+    self.assertIn("status", response)
+```
+
+### Arquivos Modificados
+- `SQLManager/controller/RouterController.py` (linhas 44-107, 110-153, 182-221)
+- `SQLManager/tests/test_AutoRouter.py` (testes completos do decorator)
+- `SQLManager/__init__.py` (remoção de `StartRoutes()` inexistente) 

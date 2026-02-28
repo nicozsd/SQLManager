@@ -53,7 +53,7 @@ class TableController():
         '''
         #SelectManager.__init__(self, self)
         
-        self.db         = db
+        self.db          = db
         self.source_name = (source_name or self.__class__.__name__).upper()
 
         self.records:     List[Dict[str, Any]]           = []

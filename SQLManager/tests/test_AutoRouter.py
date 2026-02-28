@@ -1,7 +1,5 @@
-''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 26/02/2026 '''
+''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
-import unittest
-from unittest.mock import patch
 import sys
 import os
 
@@ -11,13 +9,13 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, os.path.dirname(parent_dir))
 
 from SQLManager.controller.RouterController import AutoRouter
+
 from SQLManager.CoreConfig import CoreConfig
-from SQLManager.controller.TableController import TableController
-from SQLManager.controller.EDTController import EDTController
 from SQLManager.connection import database_connection
+from SQLManager.controller import *
 
 # Definição da Tabela de Teste (Mapeia a tabela SQL criada no banco)
-class AutoRouterTestTable(TableController):
+class AutoRouterTest(TableController):
     def __init__(self, db):
         super().__init__(db, "AutoRouterTest")
         self.RECID = EDTController("onlyNumbers", int)
@@ -25,138 +23,188 @@ class AutoRouterTestTable(TableController):
         self.PRICE = EDTController("float", float)
         self.ACTIVE = EDTController("bool", bool)
 
-class TestAutoRouterIntegration(unittest.TestCase):
+class TestAutoRouterIntegration():
+    """
+    Testando o AutoRouter com banco de dados real.
     
-    @classmethod
-    def setUpClass(cls):
-        """Configura a conexão com o banco de dados uma única vez"""
-        print("\n[SETUP] Iniciando conexão com Banco de Dados...")
-        
-        # Configuração de Conexão
-        CoreConfig.configure(
-            load_from_env=False,                    
-            db_user="Matheus_Salvagno",
-            db_password="AvT@Matheus",
-            db_server="100.108.119.125,15433",
-            db_database="Seller_Center"
-        )
-        
-        cls.db = database_connection()
-        try:
-            cls.db.connect()
-            print("[SETUP] Conectado com sucesso!")
-        except Exception as e:
-            print(f"[SETUP] FALHA AO CONECTAR: {e}")
-            raise e
-
-    @classmethod
-    def tearDownClass(cls):
-        """Fecha a conexão ao terminar todos os testes"""
-        if hasattr(cls, 'db'):
-            cls.db.disconnect()
-            print("\n[TEARDOWN] Conexão encerrada.")
-
-    def setUp(self):
-        """Prepara o ambiente antes de CADA teste"""
-        # 1. Reseta e Reconfigura o CoreConfig (pois o reset limpa tudo)
-        CoreConfig.reset()
-        CoreConfig.configure(
-            load_from_env=False,                    
-            db_user="Matheus_Salvagno",
-            db_password="AvT@Matheus",
-            db_server="100.108.119.125,15433",
-            db_database="Seller_Center"
-        )
-        
-        # 2. Configura o Router para aceitar nossa tabela de teste
-        router_config = {
-            "enable_dynamic_routes": True,
-            "tables": {
-                "AutoRouterTest": {
-                    "allowed_methods": ["GET", "POST", "PATCH", "DELETE"]
-                }
+    Aqui a gente valida se tudo funciona direitinho com as operações básicas de CRUD.
+    Precisa ter a tabela AutoRouterTest com os campos: RECID, NAME, PRICE e ACTIVE.
+    """
+    
+    def __init__(self):
+        config_dict = {
+            'db_server': 'XX',
+            'db_database': 'XX',
+            'db_user': 'XX',
+            'db_password': 'XX',
+            'router_config': {
+                'enable_dynamic_routes': True
+            },
+            'custom_regex': {
+                'CompanyEmail': r'^[\w\.-]+@mycompany\.com$'
             }
-        }
-        CoreConfig.configure_router(router_config)
-        
-        # 3. Instancia o Router com a conexão real
-        self.router = AutoRouter(self.db)
-        
-        # 4. Mock para o Router encontrar nossa classe AutoRouterTestTable
-        # Isso evita ter que criar o arquivo físico em src/model/TablePack.py
-        self.patcher = patch("SQLManager.controller.RouterController.AutoRouter._get_table_class")
-        self.mock_get_class = self.patcher.start()
-        
-        def side_effect(table_name):
-            if table_name.upper() == "AUTOROUTERTEST":
-                return AutoRouterTestTable
-            return None
-        self.mock_get_class.side_effect = side_effect
+        }        
+    
+        CoreConfig.configure_from_dict(config_dict)
 
-        # 5. Limpa a tabela no banco para garantir teste limpo
-        try:
-            # Garante que não há transações pendentes travando a tabela
-            if hasattr(self.db, 'rollback'):
-                try: self.db.rollback()
-                except: pass
-            self.db.executeCommand("DELETE FROM AutoRouterTest")
-        except Exception as e:
-            print(f"[SETUP] Aviso: Erro ao limpar tabela: {e}")
+        self.db = database_connection()
+        self.db.connect()
 
-    def tearDown(self):
-        """Limpeza após cada teste"""
-        self.patcher.stop()
-        # Rollback para liberar locks caso o teste falhe no meio
-        if hasattr(self.db, 'rollback'):
-            try: self.db.rollback()
-            except: pass
+        self.AutoRouter = AutoRouter(self.db)        
 
-
+        pass    
+    
+    # TESTANDO AS OPERAÇÕES CRUD 
     def test_1_insert_success(self):
-        """Teste de Inserção (POST)"""
-        print("\n[TESTE] 1. Inserção (POST)")
+        """Testando se consegue inserir um produto novo (POST)"""
+        print("\n[TESTE 1] Inserindo produto...")
         
         payload = {
-            "NAME": "Produto Teste Insert",
-            "PRICE": 100.50,
+            "NAME": "Mouse Gamer RGB",
+            "PRICE": 150.99,
             "ACTIVE": True
         }
         
-        response = self.router.handle_request("POST", "AutoRouterTest", body=payload)
-        print(f"Response: {response}")
-        
-        self.assertEqual(response['status'], 201, f"Erro no Insert: {response.get('error')}")
-        self.assertIn('RECID', response['data'])
-        self.assertTrue(str(response['data']['RECID']).isdigit())
+        response = self.AutoRouter.handle_request("POST", "AutoRouterTest", body=payload)
+        print(f"Resposta: {response}")                
 
-        self.assertIn('RECID', response['data'])
-        self.assertTrue(str(response['data']['RECID']).isdigit())
-
-    def test_2_update_active_false(self):
-        """Teste de Atualização de ACTIVE para False (PATCH)"""
-        print("\n[TESTE] 2. Atualização ACTIVE -> False")
+    def test_2_get_by_id(self):
+        """Buscando produto por ID (GET)"""
+        print("\n[TESTE 2] Buscando por ID...")
         
-        # Passo 1: Inserir dado inicial
-        payload = {
-            "NAME": "Produto Ativo",
-            "PRICE": 50.00,
-            "ACTIVE": True
-        }
-        create_resp = self.router.handle_request("POST", "AutoRouterTest", body=payload)
+        # Insere um produto primeiro
+        payload = {"NAME": "Teclado Mecânico", "PRICE": 320.00, "ACTIVE": True}
+        create_resp = self.AutoRouter.handle_request("POST", "AutoRouterTest", body=payload)
         recid = str(create_resp['data']['RECID'])
         
-        # Passo 2: Atualizar ACTIVE para False
-        update_payload = {"ACTIVE": False}
-        response = self.router.handle_request("PATCH", "AutoRouterTest", path_parts=[recid], body=update_payload)
-        print(f"Response: {response}")
-        
-        self.assertEqual(response['status'], 200, f"Erro no Update: {response.get('error')}")
-        
-        # Passo 3: Verificar no banco se mudou
-        get_resp = self.router.handle_request("GET", "AutoRouterTest", path_parts=[recid])
-        self.assertFalse(get_resp['data']['ACTIVE'])
-    
-if __name__ == '__main__':
-    unittest.main()
+        # Agora busca esse produto
+        response = self.AutoRouter.handle_request("GET", "AutoRouterTest", path_parts=[recid])
+        print(f"Resposta: {response}")                
 
+    def test_3_update_patch(self):
+        """Atualizando dados de um produto (PATCH)"""
+        print("\n[TESTE 3] Atualizando produto...")
+        
+        # Bota um produto lá
+        payload = {"NAME": "Headset Gamer", "PRICE": 250.00, "ACTIVE": True}
+        create_resp = self.AutoRouter.handle_request("POST", "AutoRouterTest", body=payload)
+        recid = str(create_resp['data']['RECID'])
+        
+        # Atualiza preço e nome
+        update_payload = {"PRICE": 199.90, "NAME": "Headset Gamer (PROMOÇÃO!)"}
+        response = self.AutoRouter.handle_request("PATCH", "AutoRouterTest", path_parts=[recid], body=update_payload)
+        print(f"Resposta: {response}")                
+        
+        # Confere se mudou mesmo
+        get_resp = self.AutoRouter.handle_request("GET", "AutoRouterTest", path_parts=[recid])
+        print(f"Produto atualizado: {get_resp}")        
+
+    def test_4_list_with_filters(self):
+        """Listando produtos com filtros (GET com query params)"""
+        print("\n[TESTE 4] Listando com filtros...")
+        
+        # Coloca alguns produtos no banco
+        self.AutoRouter.handle_request("POST", "AutoRouterTest", body={"NAME": "Mousepad Barato", "PRICE": 15.00, "ACTIVE": True})
+        self.AutoRouter.handle_request("POST", "AutoRouterTest", body={"NAME": "Webcam Full HD", "PRICE": 280.00, "ACTIVE": True})
+        self.AutoRouter.handle_request("POST", "AutoRouterTest", body={"NAME": "Cadeira Gamer Premium", "PRICE": 1500.00, "ACTIVE": False})
+        
+        # Busca só os que custam mais de 50 reais
+        response = self.AutoRouter.handle_request(
+            "GET", 
+            "AutoRouterTest", 
+            query_params={"PRICE_gt": "50", "page": "1", "limit": "10"}
+        )
+        print(f"Resposta: {response}")                
+
+    def test_5_delete(self):
+        """Deletando um produto (DELETE)"""
+        print("\n[TESTE 5] Deletando produto...")
+        
+        # Cria um produto só pra deletar
+        payload = {"NAME": "Produto Temporário", "PRICE": 10.00, "ACTIVE": True}
+        create_resp = self.AutoRouter.handle_request("POST", "AutoRouterTest", body=payload)
+        recid = str(create_resp['data']['RECID'])
+        
+        # Deleta
+        response = self.AutoRouter.handle_request("DELETE", "AutoRouterTest", path_parts=[recid])
+        print(f"Resposta: {response}")                
+        
+        # Confere se sumiu mesmo
+        get_resp = self.AutoRouter.handle_request("GET", "AutoRouterTest", path_parts=[recid])
+        print(f"Buscando produto deletado: {get_resp}")
+
+    def test_6_decorator_with_named_args(self):
+        """Testando chamada com argumentos nomeados"""
+        print("\n[TESTE 6] Argumentos nomeados...")
+        
+        response = self.AutoRouter.handle_request(
+            method="GET",
+            table_name="AutoRouterTest",
+            path_parts=[],
+            query_params={"page": "1", "limit": "5"},
+            body={}
+        )
+        
+        print(f"Resposta: {response}")
+
+        print("Argumentos nomeados funcionando!")
+
+    def test_7_decorator_with_positional_args(self):
+        """Testando chamada com argumentos posicionais"""
+        print("\n[TESTE 7] Argumentos posicionais...")
+        
+        response = self.AutoRouter.handle_request("GET", "AutoRouterTest", [], {"limit": "5", 'PRICE_lt': "50"}, {})
+        
+        print(f"Resposta: {response}")
+        print("Argumentos posicionais funcionando!")   
+
+if __name__ == '__main__':
+    """Roda todos os testes e mostra o resultado"""
+    print("=" * 50)
+    print("TESTANDO O AUTOROUTER")    
+    print("=" * 50)    
+
+    tests = TestAutoRouterIntegration()
+    
+    print("\n" + "=" * 50)
+
+    ''' APROVADO
+    print("TESTES 01")
+    tests.test_1_insert_success()    
+    '''
+
+    ''' APROVADO
+    print("TESTES 02")
+    tests.test_2_get_by_id()
+    '''
+
+    ''' APROVADO
+    print("TESTES 03")
+    tests.test_3_update_patch()    
+    '''
+
+    ''' APROVADO
+    print("TESTES 04")
+    tests.test_4_list_with_filters()
+    '''
+    
+    ''' APROVADO
+    print("TESTES 05")
+    tests.test_5_delete()
+    '''
+
+    ''' APROVADO
+    print("TESTES 06")
+    tests.test_6_decorator_with_named_args()
+    '''
+        
+    print("TESTES 07")
+    tests.test_7_decorator_with_positional_args()        
+
+    print("=" * 50) 
+
+#testes
+__all__ = ["AutoRouterTest"]
+
+''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 

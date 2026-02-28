@@ -313,19 +313,22 @@ class SelectManager:
             query += f" ORDER BY {main_alias}.{self._order_by}"
             query += f" OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY"
         
+        ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
         # Executa a query usando o método apropriado do banco
-        if hasattr(self._controller.db, 'doQuery'):
-            rows = self._controller.db.doQuery(query, tuple(values))
-        elif hasattr(self._controller.db, 'execute'):
-            result = self._controller.db.execute(query, tuple(values))
-            # Se retornar cursor, faz fetchall, senão assume que já é a lista
-            rows = result.fetchall() if hasattr(result, 'fetchall') else result
-        elif hasattr(self._controller.db, 'executeCommand'):
-            cursor = self._controller.db.executeCommand(query, tuple(values))
-            rows = cursor.fetchall() if cursor else []
-        else:
-            raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
-        
+        with self._controller.db.transaction() as trs:            
+            if hasattr(trs, 'doQuery'):
+                rows = trs.doQuery(query, tuple(values))
+            elif hasattr(trs, 'execute'):
+                result = trs.execute(query, tuple(values))
+                # Se retornar cursor, faz fetchall, senão assume que já é a lista
+                rows = result.fetchall() if hasattr(result, 'fetchall') else result
+            elif hasattr(trs, 'executeCommand'):
+                cursor = trs.executeCommand(query, tuple(values))
+                rows = cursor.fetchall() if cursor else []
+            else:
+                raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
+        ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+
         if has_aggregates or self._group_by or self._group_by is not None:
             results = self._process_aggregate_results(rows, columns, table_columns)
             join_records_map = None

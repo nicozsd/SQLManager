@@ -280,10 +280,12 @@ class InsertManager:
         query = f"INSERT INTO {controller.table_name} (" + ", ".join(fields) + ") OUTPUT INSERTED.RECID VALUES (" + ", ".join(['?'] * len(fields)) + ")"
         
         try:
+            ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
             with controller.db.transaction() as trs:            
-                result    = controller.db.doQuery(query, tuple(values))            
+                result    = trs.doQuery(query, tuple(values))            
                 new_recid = int(result[0][0]) if result and result[0][0] else None            
-            
+            ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+
             if new_recid is not None:
                 recid_instance = controller._get_field_instance('RECID')
                 results        = controller.select().where(recid_instance == new_recid).limit(1).do_update(True).execute()

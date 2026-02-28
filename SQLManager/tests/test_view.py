@@ -1,11 +1,13 @@
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
 from . import *
 
-CoreConfig.configure(load_from_env=False,                    
-                     db_user="Matheus_Salvagno",
-                     db_password="AvT@Matheus",
-                     db_server="100.108.119.125,15433",
-                     db_database="Seller_Center")
+CoreConfig.configure(
+    load_from_env=False,                    
+    db_user="XX",
+    db_password="XX",
+    db_server="XX",
+    db_database="XX"
+)
 
 database = data()
 database.connect()

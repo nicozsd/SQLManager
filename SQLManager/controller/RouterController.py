@@ -1,12 +1,19 @@
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 '''
 
-from typing import Any, Dict, List, Optional, Union
+from functools import wraps
+from typing    import Any, Dict, List, Optional, Union
+
 import importlib
+import inspect
 import json
+import traceback
+from unittest import case
 
 from ..CoreConfig import CoreConfig
 from ..connection import database_connection
-from .TableController import TableController
+
+from .TableController   import TableController
+from .SystemController  import SystemController
 
 class AutoRouter:
     """
@@ -18,36 +25,121 @@ class AutoRouter:
     Uso:
         router = AutoRouter(db_connection)
         response = router.handle_request('GET', 'Products', path_parts=['1'])
-    """
+    """    
     
     def __init__(self, db: database_connection):
-        self.db = db
-        self.config = CoreConfig.get_router_config()
+        self.db      = db
+        self.config  = CoreConfig.get_router_config()
         self.enabled = self.config.get('enable_dynamic_routes', False)
         
         # Otimização: Cache de configurações normalizadas (Upper Case)
-        self._exclude_tables = {t.upper() for t in self.config.get('exclude_tables', [])}
-        self._tables_config = {k.upper(): v for k, v in self.config.get('tables', {}).items()}
+        self._exclude_tables = {t.upper() for t in self.config.get('exclude_tables', [])}                        
         
-        # Cache de classes e metadados para evitar reflection repetitivo
-        self._class_cache: Dict[str, Any] = {}
-        self._field_map_cache: Dict[str, Dict[str, str]] = {}
+        # Cache de configurações específicas por tabela (Upper Case)
+        self._tables_config = {}
+        for table_name, table_cfg in self.config.get('tables', {}).items():
+            self._tables_config[table_name.upper()] = table_cfg
+        
+        # Variaiveis de Execução
+        self.current_method = None
+        self.current_table  = TableController(None)
 
-    def _get_table_class(self, table_name: str):
+        # Cache de classes e metadados para evitar reflection repetitivo
+        self._class_cache:     Dict[str, Any]            = {}
+        self._field_map_cache: Dict[str, Dict[str, str]] = {}        
+
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+    def _pre_handle(func):
+        """
+        Decorator para validação e setup antes de processar requisições.
+        Usa inspect.signature para mapear argumentos de forma robusta.
+        """
+        sig = inspect.signature(func)
+        
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:                
+                # Mapeia argumentos usando inspect.signature
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                
+                # Extrai self (instância do AutoRouter)
+                self = bound.arguments.get('self')
+
+                if not self:
+                    return {"status": 500, "error": "Internal error: missing self reference"}                                
+                
+                # Extrai argumentos necessários
+                method = bound.arguments.get('method', '').upper()
+                table_name = bound.arguments.get('table_name', '')
+                
+                # Armazena no estado da instância
+                self.current_method = method
+                
+                # 1. Verificar se AutoRouter está habilitado
+                if not self.enabled:
+                    return {"status": 404, "error": "AutoRouter is disabled in CoreConfig"}
+                
+                table_upper = table_name.upper()
+                
+                # 2. Verificar se tabela está excluída (Segurança - O(1))
+                if table_upper in self._exclude_tables:
+                    return {"status": 404, "error": f"Table '{table_name}' access is restricted"}
+                
+                # 3. Obter Classe da Tabela (Cacheado)
+                TableClass = self._get_table_class_by_name(table_name)
+                if not TableClass:
+                    return {"status": 404, "error": f"Table '{table_name}' not found in TablePack"}
+                
+                # 4. Instanciar Tabela
+                try:
+                    table = TableClass(self.db)
+                    self.current_table = table
+                except Exception as e:
+                    return {"status": 500, "error": f"Error instantiating table: {str(e)}"}
+                
+                # 5. Verificar Configuração Específica da Tabela (O(1))
+                table_config = self._tables_config.get(table_upper, {})
+                
+                allowed = table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
+                if method not in allowed:
+                    return {"status": 405, "error": f"Method {method} not allowed for table {table_name}"}
+                
+                bound.arguments['_table'] = table
+                bound.arguments['_table_config'] = table_config
+
+                return func(**bound.arguments)
+            except Exception as e:                                                
+                print(f"{SystemController.custom_text("PRE_HANDLE", 'red')}\n{e}")
+                traceback.print_exc()
+                return {"status": 500, "error": f"Decorator error: {str(e)}"}
+        
+        return wrapper
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''    
+    def _get_table_class_by_name(self, table_name: str):
         """
         Tenta importar a classe da tabela dinamicamente a partir do TablePack.
         Utiliza cache para evitar imports repetitivos.
+        
+        Args:
+            table_name: Nome da tabela a ser buscada
+            
+        Returns:
+            Classe da tabela ou None se não encontrada
         """
         table_upper = table_name.upper()
         if table_upper in self._class_cache:
             return self._class_cache[table_upper]
 
         module = None
-        possible_modules = ["model.TablePack", "src.model.TablePack"]
         
+        possible_modules = ["model.TablePack", "src.model.TablePack"]                 
+
         for mod_name in possible_modules:
             try:
-                module = importlib.import_module(mod_name)
+                module = importlib.import_module(mod_name)                
                 break
             except ImportError:
                 continue
@@ -61,14 +153,25 @@ class AutoRouter:
                 cls = getattr(module, name)
                 self._class_cache[table_upper] = cls
                 return cls
+            
         return None
+    
+    def _get_table_class(self):
+        """
+        Wrapper para compatibilidade - retorna classe baseada em current_table.
+        """
+        if not self.current_table or not self.current_table.source_name:
+            return None
+        
+        return self._get_table_class_by_name(self.current_table.source_name)
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
-    def _get_field_map(self, table: TableController) -> Dict[str, str]:
+    def _get_field_map(self) -> Dict[str, str]:
         """
         Retorna um mapa {NOME_CAMPO_UPPER: NomeRealDoAtributo} para a tabela.
         Cacheado por nome da tabela.
         """
-        t_name = table.source_name.upper()
+        t_name = self.current_table.source_name.upper()
         if t_name in self._field_map_cache:
             return self._field_map_cache[t_name]
         
@@ -85,7 +188,7 @@ class AutoRouter:
         }
         
         # Inspeciona a instância para encontrar campos válidos (EDTs/Enums/Values)
-        for attr, val in table.__dict__.items():
+        for attr, val in self.current_table.__dict__.items():
             if attr.startswith('_') or attr in ignore:
                 continue
             
@@ -98,23 +201,26 @@ class AutoRouter:
         self._field_map_cache[t_name] = field_map
         return field_map
 
-    def _evaluate_condition(self, table: TableController, condition_str: str):
+    def _evaluate_condition(self, condition_str: str):
         """
         Avalia uma string de condição (ex: 'ACTIVE == 1') no contexto da tabela.
         Retorna um FieldCondition ou BinaryExpression.
         """
         context = {}
-        field_map = self._get_field_map(table)
+        field_map = self._get_field_map()
         for real_name in field_map.values():
-            context[real_name] = getattr(table, real_name)
+            context[real_name] = getattr(self.current_table, real_name)
         
         try:
             return eval(condition_str, {"__builtins__": {}}, context)
         except Exception as e:
             raise ValueError(f"Invalid condition syntax: {str(e)}")
 
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+    @_pre_handle
     def handle_request(self, method: str, table_name: str, path_parts: List[str] = [], 
-                       query_params: Dict[str, Any] = {}, body: Dict[str, Any] = {}) -> Dict[str, Any]:
+                       query_params: Dict[str, Any] = {}, body: Dict[str, Any] = {}, 
+                       _table: TableController = None, _table_config: Dict = None) -> Dict[str, Any]:
         """
         Processa a requisição dinâmica e retorna o resultado padronizado.
         
@@ -124,68 +230,59 @@ class AutoRouter:
             path_parts (List[str]): Segmentos da URL após a tabela (ex: ['1'] ou ['active'])
             query_params (Dict): Parâmetros de query string (filtros, paginação)
             body (Dict): Corpo da requisição (JSON)
+            _table (TableController): Injetado pelo decorator _pre_handle
+            _table_config (Dict): Injetado pelo decorator _pre_handle
             
         Returns:
             Dict: {status: int, data: Any, error: str, meta: Dict}
         """
-        if not self.enabled:
-            return {"status": 404, "error": "AutoRouter is disabled in CoreConfig"}
-
-        table_upper = table_name.upper()
-
-        # 1. Verificar se tabela está excluída (Segurança - O(1))
-        if table_upper in self._exclude_tables:
-            return {"status": 404, "error": f"Table '{table_name}' access is restricted"}
-
-        # 2. Obter Classe da Tabela (Cacheado)
-        TableClass = self._get_table_class(table_name)
-        if not TableClass:
-            return {"status": 404, "error": f"Table '{table_name}' not found in TablePack"}
-
-        # 3. Instanciar Tabela
-        try:
-            table = TableClass(self.db)
-        except Exception as e:
-            return {"status": 500, "error": f"Error instantiating table: {str(e)}"}
-
-        # 4. Verificar Configuração Específica da Tabela (O(1))
-        table_config = self._tables_config.get(table_upper, {})
+        table        = _table
+        table_config = _table_config if _table_config else {}
         
-        allowed = table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
-        if method.upper() not in allowed:
-            return {"status": 405, "error": f"Method {method} not allowed for table {table_name}"}
-
-        # 5. Roteamento por Método
         try:
-            method = method.upper()
-            if method == "GET":
-                return self._handle_get(table, path_parts, query_params, table_config)
-            elif method == "POST":
-                return self._handle_post(table, body)
-            elif method == "PATCH":
-                if not path_parts:
-                    return {"status": 400, "error": "Missing ID for PATCH"}
-                return self._handle_patch(table, path_parts[0], body)
-            elif method == "DELETE":
-                if not path_parts:
-                    return {"status": 400, "error": "Missing ID for DELETE"}
-                return self._handle_delete(table, path_parts[0], table_config)
-            else:
-                return {"status": 405, "error": "Method not supported"}
-        except Exception as e:
+            match method.upper():
+                case "GET":            
+                    return self._handle_get(table, path_parts, query_params, table_config)
+                case "POST":
+                    return self._handle_post(table, body)
+                case "PATCH":
+                    if not path_parts:
+                        return {"status": 400, "error": "Missing ID for PATCH"}
+                
+                    return self._handle_patch(table, path_parts[0], body)
+                case "DELETE":
+
+                    if not path_parts:
+                        return {"status": 400, "error": "Missing ID for DELETE"}
+                
+                    return self._handle_delete(table, path_parts[0], table_config)
+                case _:
+                    return {"status": 405, "error": "Method not supported"}
+        except Exception as e:                        
+            print(f"{SystemController.custom_text("HANDLE_REQUEST", 'red')}\n{e}")
+            traceback.print_exc()
             return {"status": 500, "error": f"Internal Server Error: {str(e)}"}
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
-    def _handle_get(self, table: TableController, path_parts: List[str], params: Dict, config: Dict):
-        field_map = self._get_field_map(table)
+    def _handle_get(self, table: TableController, path_parts: List[str], params: Dict, config: Dict):        
+        try:
+            field_map = self._get_field_map()            
 
-        # Rota: GET /{table}/{id}
-        if path_parts and path_parts[0].isdigit():
-            recid = int(path_parts[0])
-            if table.exists(table.field('RECID') == recid):
-                result = table.select().where(table.field('RECID') == recid).execute()
-                if result:
-                    return {"status": 200, "data": self._serialize(result[0], field_map)}
-            return {"status": 404, "error": "Record not found"}
+            # Rota: GET /{table}/{id}
+            if path_parts and path_parts[0].isdigit():                                
+                recid = int(path_parts[0])
+                if table.exists(table.RECID == recid):
+                    table.select().where(table.RECID == recid).execute()
+
+                    if table.records:
+                        return {"status": 200, "data": self._serialize(table.records[0], field_map)}
+                        
+                return {"status": 404, "error": "Record not found"}
+            
+        except Exception as e:
+            print(f"{SystemController.custom_text("HANDLE_GET", 'red')}\n{e}")
+            traceback.print_exc()            
+            raise    
 
         # Rota: GET /{table}/{custom_route}
         if path_parts:
@@ -194,34 +291,32 @@ class AutoRouter:
             for route in custom_routes:
                 if route.get('route') == route_name:
                     try:
-                        condition = self._evaluate_condition(table, route.get('where', '1==1'))
-                        query = table.select().where(condition)
-                        
+                        condition = self._evaluate_condition(route.get('where', '1==1'))
+
                         if 'columns' in route:
                             cols = [getattr(table, c) for c in route['columns'] if hasattr(table, c)]
-                            query.columns(*cols)
-                            
-                        results = query.execute()
-                        data = [self._serialize(r, field_map) for r in results]
-                        return {"status": 200, "data": data, "meta": {"count": len(data)}}
+
+                        table.select().where(condition).columns(cols)                                                
+
+                        data = [self._serialize(r, field_map) for r in table.records]
+                        return {"status": 200, "data": data, "meta": {"count": len(data)}}                    
                     except Exception as e:
                         return {"status": 500, "error": f"Custom route error: {str(e)}"}
             return {"status": 404, "error": f"Custom route '{route_name}' not found"}
 
         # Rota: GET /{table} (Listagem com filtros)
         try:
-            page = int(params.get('page', 1))
+            page  = int(params.get('page', 1))
             limit = int(params.get('limit', 20))
         except ValueError:
             return {"status": 400, "error": "Invalid pagination parameters"}
 
-        offset = (page - 1) * limit
-        
-        query = table.select()
-        
-        # Filtros dinâmicos (ex: PRICE_gt=100)
-        for key, value in params.items():
-            if key in ['page', 'limit']: continue
+        offset = (page - 1) * limit                                
+    
+        if params and len(params) > 0 and any(k not in ('page', 'limit') for k in params):
+            for key, value in params.items():
+                if key in ('page', 'limit'):
+                    continue
             
             field_name_raw = key
             operator = 'eq'
@@ -240,19 +335,25 @@ class AutoRouter:
                 field_attr = table.field(real_field_name)
                 
                 # Aplica filtro
-                if operator == 'eq': query.where(field_attr == value) # type: ignore
-                elif operator == 'gt': query.where(field_attr > value)
-                elif operator == 'gte': query.where(field_attr >= value)
-                elif operator == 'lt': query.where(field_attr < value)
-                elif operator == 'lte': query.where(field_attr <= value)
-                elif operator == 'neq': query.where(field_attr != value)
-                elif operator == 'like': query.where(field_attr.like(str(value)))
+                match operator:
+                    #equal / igual
+                    case 'eq':   table.select().where(field_attr == value).limit(limit).offset(offset).execute()
+                    #greater than / maior que
+                    case 'gt':   table.select().where(field_attr > value).limit(limit).offset(offset).execute()
+                    #greater than or equal / maior ou igual
+                    case 'gte':  table.select().where(field_attr >= value).limit(limit).offset(offset).execute()
+                    #less than / menor que
+                    case 'lt':   table.select().where(field_attr < value).limit(limit).offset(offset).execute()
+                    #less than or equal / menor ou igual
+                    case 'lte':  table.select().where(field_attr <= value).limit(limit).offset(offset).execute()
+                    #not equal / diferente
+                    case 'neq':  table.select().where(field_attr != value).limit(limit).offset(offset).execute()
+                    # like / similar a (usa SQL LIKE, suporta % e _)
+                    case 'like': table.select().where(field_attr.like(str(value))).limit(limit).offset(offset).execute()        
+        else:
+            table.select().limit(limit).offset(offset).execute()
 
-        # Executa query paginada # type: ignore
-        query.limit(limit).offset(offset)
-        results = query.execute()
-        
-        data = [self._serialize(r, field_map) for r in results]
+        data = [self._serialize(r, field_map) for r in table.records]
         
         return {
             "status": 200, 
@@ -261,7 +362,7 @@ class AutoRouter:
         }
 
     def _handle_post(self, table: TableController, body: Dict):
-        field_map = self._get_field_map(table)
+        field_map = self._get_field_map()
         
         try:
             for key, value in body.items():
@@ -283,11 +384,11 @@ class AutoRouter:
         if not recid.isdigit(): return {"status": 400, "error": "Invalid ID"}
         recid = int(recid)
         
-        if not table.exists(table.field('RECID') == recid):
+        if not table.exists(table.RECID == recid):
             return {"status": 404, "error": "Record not found"}
         
         try:
-            field_map = self._get_field_map(table)
+            field_map = self._get_field_map()
             valid_fields = {}
             
             for key, value in body.items():
@@ -299,8 +400,8 @@ class AutoRouter:
             
             if not valid_fields:
                 return {"status": 400, "error": "No valid fields provided for update"}
-
-            affected = table.update_recordset(where=table.field('RECID') == recid, **valid_fields)
+            
+            affected = table.update_recordset(where=(table.RECID == recid), **valid_fields)
             
             if affected > 0:
                 return {"status": 200, "message": "Updated successfully"}
@@ -316,7 +417,7 @@ class AutoRouter:
             for route in custom_routes:
                 if route.get('route') == recid:
                     try:
-                        condition = self._evaluate_condition(table, route.get('where', '0==1'))
+                        condition = self._evaluate_condition(route.get('where', '0==1'))
                         affected = table.delete_from().where(condition).execute()
                         return {"status": 200, "message": f"Deleted {affected} records"}
                     except Exception as e:
@@ -325,7 +426,7 @@ class AutoRouter:
         
         recid = int(recid)
         
-        if not table.exists(table.field('RECID') == recid):
+        if not table.exists(table.RECID == recid):
             return {"status": 404, "error": "Record not found"}
 
         behavior = config.get('delete_behavior', {'mode': 'physical'})
@@ -334,9 +435,9 @@ class AutoRouter:
             if behavior.get('mode') == 'logical':
                 field = behavior.get('field', 'IS_DELETED')
                 value = behavior.get('value', 1)
-                table.update_recordset(where=table.field('RECID') == recid, **{field: value})
+                table.update_recordset(where=(table.RECID == recid), **{field: value})
             else:
-                table.delete_from().where(table.field('RECID') == recid).execute()
+                table.delete_from().where(table.RECID == recid).execute()
             
             return {"status": 200, "message": "Deleted successfully"}
         except Exception as e:
@@ -344,6 +445,7 @@ class AutoRouter:
 
     def _serialize(self, record_obj, field_map: Dict[str, str]) -> Dict:
         """Serializa uma instância de TableController para dict usando mapa de campos"""
+
         if isinstance(record_obj, dict):
             return record_obj
             
@@ -388,7 +490,7 @@ class AutoRouter:
         
         return sorted(tables)
 
-    def generate_postman_collection(self, base_url: str = "http://localhost:5000", collection_name: str = "SQLManager API") -> Dict[str, Any]:
+    def generate_collection(self, base_url: str = "http://localhost:5000", collection_name: str = "SQLManager_API") -> Dict[str, Any]:
         """
         Gera uma coleção do Postman (v2.1) com todas as rotas disponíveis.
         
@@ -429,7 +531,10 @@ class AutoRouter:
                     "host": host.split('.'),
                     "path": path_prefix + path_segments
                 }
-                if port: u["port"] = port
+
+                if port: 
+                    u["port"] = port
+
                 if query:
                     q_list = []
                     for pair in query.split('&'):
@@ -438,39 +543,34 @@ class AutoRouter:
                     u["query"] = q_list
                 return u
 
-            if "GET" in allowed:
-                table_items.append({
-                    "name": f"List {table_name}",
-                    "request": {"method": "GET", "header": [], "url": make_url([table_name], "page=1&limit=10")}
-                })
-                table_items.append({
-                    "name": f"Get {table_name} by ID",
-                    "request": {"method": "GET", "header": [], "url": make_url([table_name, "1"])}
-                })
-
-            if "POST" in allowed:
-                table_items.append({
-                    "name": f"Create {table_name}",
-                    "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": json.dumps({"FIELD": "VALUE"}, indent=4)}, "url": make_url([table_name])}
-                })
-
-            if "PATCH" in allowed:
-                table_items.append({
-                    "name": f"Update {table_name}",
-                    "request": {"method": "PATCH", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": json.dumps({"FIELD": "NEW_VALUE"}, indent=4)}, "url": make_url([table_name, "1"])}
-                })
-
-            if "DELETE" in allowed:
-                table_items.append({
-                    "name": f"Delete {table_name}",
-                    "request": {"method": "DELETE", "header": [], "url": make_url([table_name, "1"])}
-                })
+            match allowed:
+                case ["GET"]:
+                    table_items.append({
+                        "name": f"List {table_name}",
+                        "request": {"method": "GET", "header": [], "url": make_url([table_name], "page=1&limit=10")}
+                    })
+                    table_items.append({
+                        "name": f"Get {table_name} by ID",
+                        "request": {"method": "GET", "header": [], "url": make_url([table_name, "1"])}
+                    })
+                case ["POST"]:
+                    table_items.append({
+                        "name": f"Create {table_name}",
+                        "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": json.dumps({"FIELD": "VALUE"}, indent=4)}, "url": make_url([table_name])}
+                    })
+                case ["PATCH"]:
+                    table_items.append({
+                        "name": f"Update {table_name}",
+                        "request": {"method": "PATCH", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": json.dumps({"FIELD": "NEW_VALUE"}, indent=4)}, "url": make_url([table_name, "1"])}
+                    })
+                case ["DELETE"]:
+                    table_items.append({
+                        "name": f"Delete {table_name}",
+                        "request": {"method": "DELETE", "header": [], "url": make_url([table_name, "1"])}
+                    })            
             
             if table_items:
                 item_list.append({"name": table_name, "item": table_items})
 
-        return {
-            "info": {"name": collection_name, "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
-            "item": item_list
-        }
-''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 '''
+        return {"item": item_list}
+''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 25/02/2026 ''' 
