@@ -215,10 +215,8 @@ class AutoRouter:
         tables = self._discover_tables()
         
         if not tables:
-            print(f"{SystemController.custom_text('[AutoRouter]', 'yellow')} Nenhuma tabela encontrada para registro de rotas.")
             return
         
-        print(f"{SystemController.custom_text('[AutoRouter]', 'green')} Registrando rotas automáticas...")
         total_routes = 0
         
         for table_name in tables:
@@ -230,7 +228,7 @@ class AutoRouter:
             routes_count = self._register_table_routes(table_name, allowed_methods, suffix)
             total_routes += routes_count
         
-        print(f"{SystemController.custom_text('[AutoRouter]', 'green')} Total: {total_routes} rotas registradas para {len(tables)} tabela(s).")
+        print(f"{SystemController.custom_text('[AutoRouter]', 'green')} {total_routes} rotas registradas (/{suffix}/)")
     
     def _register_table_routes(self, table_name: str, allowed_methods: List[str], suffix: str) -> int:
         """
@@ -260,9 +258,7 @@ class AutoRouter:
                 status = result.pop('status', 200)
                 return jsonify(result), status
             
-            for method in list_methods:
-                print(f"  {method:7} {base_route}")
-                routes_created += 1
+            routes_created += len(list_methods)
         
         # Rota para operações com ID: /{suffix}/{table}/{id}
         detail_route = f"{base_route}/<path:resource_path>"
@@ -289,9 +285,7 @@ class AutoRouter:
                 status = result.pop('status', 200)
                 return jsonify(result), status
             
-            for method in detail_methods:
-                print(f"  {method:7} {detail_route}")
-                routes_created += 1
+            routes_created += len(detail_methods)
         
         return routes_created
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 27/02/2026 '''
@@ -604,59 +598,45 @@ class AutoRouter:
         ]
         
         module = None
-        tried_paths = []
+        module_name = None
         
         for mod_name in possible_modules:
-            tried_paths.append(mod_name)
             try:
                 module = importlib.import_module(mod_name)
-                print(f"{SystemController.custom_text('[AutoRouter]', 'green')} Módulo encontrado: {mod_name}")
+                module_name = mod_name
                 break
-            except ImportError as e:
+            except ImportError:
                 continue
         
         if not module:
             print(f"{SystemController.custom_text('[AutoRouter]', 'yellow')} Nenhum módulo TablePack encontrado.")
-            print(f"  Caminhos tentados: {', '.join(tried_paths)}")
             return []
         
         # Verifica se há __all__ definido no módulo
-        if hasattr(module, '__all__'):
-            print(f"{SystemController.custom_text('[AutoRouter]', 'cyan')} Usando __all__ do módulo ({len(module.__all__)} itens)")
-            for name in module.__all__:
-                if name.startswith('_'):
-                    continue
-                if name.upper() in self._exclude_tables:
-                    print(f"  - Ignorando {name} (na lista de exclusão)")
-                    continue
-                
-                try:
-                    attr = getattr(module, name)
-                    if isinstance(attr, type):
-                        tables.append(name)
-                        print(f"  + {name}")
-                except AttributeError:
-                    continue
-        else:
-            # Fallback: itera sobre dir(module)
-            print(f"{SystemController.custom_text('[AutoRouter]', 'cyan')} Explorando módulo via dir()")
-            for name in dir(module):
-                if name.startswith('_'):
-                    continue
-                if name.upper() in self._exclude_tables:
-                    print(f"  - Ignorando {name} (na lista de exclusão)")
-                    continue
-                    
-                try:
-                    attr = getattr(module, name)
-                    if isinstance(attr, type):
-                        tables.append(name)
-                        print(f"  + {name}")
-                except:
-                    continue
+        items_to_check = module.__all__ if hasattr(module, '__all__') else [n for n in dir(module) if not n.startswith('_')]
+        
+        excluded_count = 0
+        for name in items_to_check:
+            if name.startswith('_'):
+                continue
+            if name.upper() in self._exclude_tables:
+                excluded_count += 1
+                continue
+            
+            try:
+                attr = getattr(module, name)
+                if isinstance(attr, type):
+                    tables.append(name)
+            except AttributeError:
+                continue
         
         if not tables:
-            print(f"{SystemController.custom_text('[AutoRouter]', 'yellow')} Nenhuma classe de tabela encontrada no módulo.")
+            print(f"{SystemController.custom_text('[AutoRouter]', 'yellow')} Nenhuma tabela encontrada.")
+        else:
+            msg = f"Módulo '{module_name}' - {len(tables)} tabela(s) descoberta(s)"
+            if excluded_count > 0:
+                msg += f" ({excluded_count} excluída(s))"
+            print(f"{SystemController.custom_text('[AutoRouter]', 'green')} {msg}")
         
         return sorted(tables)
     
