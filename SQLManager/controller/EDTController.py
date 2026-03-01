@@ -51,7 +51,7 @@ class REGEX (EDT_Utils):
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
         patterns: Dict[str, str] = {
             "BigInt": r"^\d+n$",
-            "bool": r"^[01]$",
+            "bool": r"^(0|1|True|False|true|false)$",
             "any": r"^.*$",
             "binary": r"^(1|0)+$",            
             'float': r'^-?\d+(\.\d+)?$',
@@ -152,7 +152,8 @@ class EDTController(EDT_Utils, OperationManager):
         if self.type_id is not None:
             expected_type = self.type_id.value if hasattr(self.type_id, 'value') else self.type_id
             if isinstance(expected_type, type):
-                if not isinstance(edt_value, expected_type):
+                is_bool_int = expected_type is bool and isinstance(edt_value, int) and edt_value in (0, 1)
+                if not isinstance(edt_value, expected_type) and not is_bool_int:
                     raise ValueError(
                         f"\nValor {SystemController.custom_text(edt_value, 'blue')} "
                         f"deve ser do tipo {SystemController.custom_text(expected_type.__name__, 'red', False, True)} "
@@ -160,7 +161,7 @@ class EDTController(EDT_Utils, OperationManager):
                     )
         
         # Pula validação de regex para tipos nativos datetime/date/time do Python
-        skip_regex_validation = isinstance(edt_value, (datetime, date, time))
+        skip_regex_validation = isinstance(edt_value, (datetime, date, time, bool))
         
         # Valida regex apenas se não for um tipo datetime nativo
         if not skip_regex_validation and not self.regex.is_valid(edt_value):

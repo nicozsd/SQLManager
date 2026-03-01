@@ -117,19 +117,20 @@ class UpdateManager:
         
         set_clauses = [f"{field} = ?" for field in set_values.keys()]
         query       = f"UPDATE {controller.table_name} SET " + ", ".join(set_clauses)
-        values      = list(set_values.values())
-        
-        if where:
+        values      = list(set_values.values())                
+
+        ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+        if where is not None:
             where_sql, where_values = where.to_sql()
             query += f" WHERE {where_sql}"
             values.extend(where_values if isinstance(where_values, list) else [where_values])
         
         try:
-            with controller.db.transaction() as trs:
-                cursor        = trs.executeCommand(query, tuple(values))
-                affected_rows = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+            with controller.db.transaction() as trs:                
+                affected_rows = trs.executeCommand(query, tuple(values))          
             return affected_rows
         except Exception as error:            
             raise Exception(f"Erro ao atualizar registros em massa: {error}")
+        ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
 ''' [END CODE] Project: SQLManager Version 4.0 / issue: #1 / made by: Nicolas Santos / created: 23/02/2026 '''

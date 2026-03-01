@@ -4,8 +4,9 @@ from typing              import Any, List, Dict, Optional, Union
 from ..connection        import database_connection as data, Transaction
 from .EDTController      import EDTController
 from .BaseEnumController import BaseEnumController
-
-from .managers           import *
+from .managers._conditions_Managers import FieldCondition, BinaryExpression
+from .managers           import SelectManager, InsertManager, UpdateManager, DeleteManager, InsertRecordsetWrapper, DeleteRecordsetManager
+from .SystemController   import SystemController
 
 class TableController():
     """
@@ -52,7 +53,7 @@ class TableController():
         '''
         #SelectManager.__init__(self, self)
         
-        self.db         = db
+        self.db          = db
         self.source_name = (source_name or self.__class__.__name__).upper()
 
         self.records:     List[Dict[str, Any]]           = []
@@ -65,6 +66,16 @@ class TableController():
 
         self.__select_manager = SelectManager(self) 
 
+    @property
+    def table_name(self) -> str:
+        return self.source_name
+    
+    @table_name.setter
+    def table_name(self, value: str):
+        self.source_name = value
+
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
+
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
 
     def __getattribute__(self, name: str):
@@ -75,7 +86,7 @@ class TableController():
         - Se houver query pendente, executa antes de retornar o campo
         '''
         protected_attrs = {
-            'db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
+            'db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
             '_where_conditions', '_columns', '_joins', '_order_by', '_limit',
             '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
             'controller', '__class__', '__dict__', 'isUpdate', '_pending_wrapper',
@@ -94,9 +105,9 @@ class TableController():
         if not name.startswith('_'):
             pending = object.__getattribute__(self, '_pending_wrapper')
             if pending is not None:
+                object.__setattr__(self, '_pending_wrapper', None) # Previne recursão infinita
                 try:
                     pending._finalize()  # Força execução
-                    object.__setattr__(self, '_pending_wrapper', None)
                 except:
                     pass
         
@@ -116,15 +127,15 @@ class TableController():
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
     def __setattr__(self, name: str, value: Any):
         '''Intercepta atribuições para validar EDT/Enum'''
-        if name in ('db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
+        if name in ('db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
                     '_where_conditions', '_columns', '_joins', '_order_by', '_limit', 
                     '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
                     'controller', '_pending_wrapper', '__select_manager'):
             object.__setattr__(self, name, value)
             return
 
-        if hasattr(self, name):            
-            attr = object.__getattribute__(self, name)
+        if name in self.__dict__:            
+            attr = self.__dict__[name]
             if isinstance(attr, (EDTController, BaseEnumController)):
                 if isinstance(value, EDTController):
                     attr.value = value.value
@@ -148,22 +159,21 @@ class TableController():
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
 
     def insert(self) -> bool:
-        """Insere um novo registro na tabela"""
+        """Insere um novo registro na tabela"""        
         return InsertManager.insert(self)
     
     def insert_recordset(self, source_data: Union[List[tuple], List[Dict], List[Any]], columns: Optional[List[str]] = None) -> InsertRecordsetWrapper:
-        """Insere múltiplos registros em massa (auto-executa ou use .where())"""
+        """Insere múltiplos registros em massa (auto-executa ou use .where())"""        
         return InsertManager.insert_recordset(self, source_data, columns)
 
     def update(self) -> bool:
         """Atualiza um registro existente na tabela"""
         if(not self.isUpdate):
             raise Exception("Registro não definido para atualização.")
-        
         values = [{}]
         for key in self.__dict__:
             attr = self._get_field_instance(key)
-            if not (isinstance(attr, (EDTController, BaseEnumController, BaseEnumController.Enum))) or key == 'RECID':
+            if not (isinstance(attr, (EDTController, BaseEnumController, BaseEnumController.Enum))) or key.upper() == 'RECID':
                 continue
             values[0][key] = attr.value
 
@@ -180,10 +190,10 @@ class TableController():
         self.isUpdate = _update        
 
     def update_recordset(self, where: Optional[Union[FieldCondition, BinaryExpression]] = None, **fields) -> int:
-        """Atualiza múltiplos registros em massa"""
+        """Atualiza múltiplos registros em massa"""        
         return UpdateManager.update_recordset(self, where, **fields)
 
-    def delete(self) -> bool:
+    def delete(self) -> bool: # type: ignore
         """Exclui um registro da tabela"""
         return DeleteManager.delete(self)
     
@@ -198,12 +208,11 @@ class TableController():
             result = table.delete_from().where(table.CAMPO == valor).execute()
         
         Returns:
-            DeleteRecordsetManager: Manager para construir a query de deleção
-        """
+            DeleteRecordsetManager: Manager para construir a query de deleção        """
         return DeleteManager.delete_from(self)
     
     def select(self) -> "SelectManager":
-        # Retorna o SelectManager diretamente, sem wrapper
+        # Retorna o SelectManager diretamente, sem wrapper        
         return SelectManager(self)
 
     def field(self, name: str):
@@ -441,7 +450,7 @@ class TableController():
         Validação antes do insert ou update.
         Verifica se campos obrigatórios estão preenchidos (exceto os que têm DEFAULT no banco).
         Returns:
-            Dict[str, Any]: {'valid': True/False, 'error': mensagem}
+            Dict[str, Any]: {'valid': True/False, 'error': mensagem com log}
         '''
         ret = {'valid': True, 'error': ''}
 
@@ -451,19 +460,30 @@ class TableController():
         # Filtrar campos NOT NULL que NÃO têm DEFAULT (esses são realmente obrigatórios)
         required_fields = [
             col[0] for col in columns 
-            if col[2] == 'NO' and col[0] != 'RECID' and col[0] not in columns_with_default
+            if col[2] == 'NO' and col[0].upper() != 'RECID' and col[0] not in columns_with_default
         ]
         
-        instance_fields = {k: self._get_field_instance(k) for k in self.__dict__ if isinstance(self._get_field_instance(k), (EDTController, BaseEnumController, BaseEnumController.Enum))}
+        instance_fields = {k.upper(): self._get_field_instance(k) for k in self.__dict__ if isinstance(self._get_field_instance(k), (EDTController, BaseEnumController, BaseEnumController.Enum))}
         
         # Validar apenas campos obrigatórios que NÃO têm DEFAULT
         for field in required_fields:
-            if field not in instance_fields:
-                ret = {'valid': False, 'error': f"Campo obrigatório '{field}' não existe na instância"}
+            field_upper = field.upper()
+            if field_upper not in instance_fields:
+                error_msg = f"Campo obrigatório '{field}' não foi encontrado como atributo na instância da tabela '{self.source_name}'."
+                print(SystemController.custom_text(f"[VALIDAÇÃO] {SystemController.timenow()} - {error_msg}", 'red', is_bold=True))
+                SystemController.stack_log()
+                ret = {'valid': False, 'error': error_msg}
                 return ret
-            attr = instance_fields[field]
-            if attr.value is None or attr.value == '':
-                ret = {'valid': False, 'error': f"Campo obrigatório '{field}' não pode ser vazio (campo sem DEFAULT no banco)"}
+            
+            attr = instance_fields[field_upper]
+            
+            value_to_check = attr._value if isinstance(attr, EDTController) else attr.value
+
+            if value_to_check is None or (isinstance(value_to_check, str) and not value_to_check.strip()):
+                error_msg = f"Campo obrigatório '{field}' da tabela '{self.source_name}' não pode ser nulo ou vazio."
+                print(SystemController.custom_text(f"[VALIDAÇÃO] {SystemController.timenow()} - {error_msg}", 'red', is_bold=True))
+                SystemController.stack_log()
+                ret = {'valid': False, 'error': error_msg}
                 return ret
         return ret
 

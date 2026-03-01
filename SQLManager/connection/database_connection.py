@@ -46,13 +46,19 @@ class _Consult_Manager:
         cursor.close()
         return (results, columns) if ret_cols else results
     
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
     def executeCommand(self, command: str, params: tuple = ()): 
         '''Executa um comando na conexão'''
         cursor = self.connection.cursor()
         cursor.execute(command, params)
+        affected = getattr(cursor, 'rowcount', 0)
+
         if isinstance(self, database_connection):
             self.connection.commit()
+
         cursor.close()
+        return affected
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
 class Transaction (_TTS_Manager, _Consult_Manager):
     """
