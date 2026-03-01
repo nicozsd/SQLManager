@@ -5,7 +5,7 @@ O **AutoRouter** é um módulo inteligente do SQLManager que transforma automati
 
 Ele elimina a necessidade de criar controllers, rotas e serviços manuais para operações CRUD (Create, Read, Update, Delete) padrão, permitindo que você exponha seu banco de dados de forma segura e imediata.
 
-## 🎯 Objetivo e Benefícios
+## Objetivo e Benefícios
 
 - **Zero Boilerplate:** Crie a tabela no banco, rode o gerador de modelos, e a rota já existe automaticamente.
 - **Registro Automático (Flask):** Passe o objeto `app` Flask e todas as rotas são criadas instantaneamente.
@@ -14,9 +14,9 @@ Ele elimina a necessidade de criar controllers, rotas e serviços manuais para o
 - **Filtros Poderosos:** Suporte nativo a filtros complexos via URL (maior que, contém, diferente, etc.).
 - **Documentação Automática:** Gera coleção Postman completa com todos os endpoints.
 
-## ✅ Quando Usar vs. ❌ Quando NÃO Usar
+## Quando Usar vs. Quando NÃO Usar
 
-| ✅ Use o AutoRouter quando... | ❌ NÃO use o AutoRouter quando... |
+| Use o AutoRouter quando... | NÃO use o AutoRouter quando... |
 | :--- | :--- |
 | Precisa de CRUD padrão (Listar, Ler, Criar, Deletar). | A operação exige orquestração complexa de múltiplos serviços. |
 | Tabelas de cadastro, configurações, logs. | Existem regras de negócio muito específicas que não cabem no `validate_write` da tabela. |
@@ -25,7 +25,7 @@ Ele elimina a necessidade de criar controllers, rotas e serviços manuais para o
 
 ---
 
-## 🚀 Inicialização e Configuração
+## Inicialização e Configuração
 
 ### Passo 1: Configurar o CoreConfig
 
@@ -109,10 +109,10 @@ if __name__ == '__main__':
 ```
 
 **O que acontece:**
-- ✅ Todas as tabelas são descobertas automaticamente
-- ✅ Rotas CRUD são criadas para cada tabela permitida
-- ✅ Rotas customizadas (do CoreConfig) são registradas
-- ✅ Você pode rodar `app.run()` imediatamente
+- Todas as tabelas são descobertas automaticamente
+- Rotas CRUD são criadas para cada tabela permitida
+- Rotas customizadas (do CoreConfig) são registradas
+- Você pode rodar `app.run()` imediatamente
 
 #### **Modo 2: Manual (Para frameworks customizados)**
 
@@ -140,7 +140,7 @@ print(response)
 
 ---
 
-## 🛣️ Rotas Criadas Automaticamente
+## Rotas Criadas Automaticamente
 
 Quando você inicializa o AutoRouter com um app Flask, as seguintes rotas são criadas **automaticamente** para cada tabela:
 
@@ -226,7 +226,7 @@ Executa deleção em massa baseada em configuração.
 
 ---
 
-## 📡 Formato de Resposta
+## Formato de Resposta
 
 O AutoRouter sempre retorna um JSON padronizado.
 
@@ -393,16 +393,16 @@ Se você definiu uma rota customizada no `CoreConfig` (ex: para limpar logs anti
 *   **Configuração:** `{"route": "clear_old", ...}`
 *   **URL:** `DELETE http://localhost:5000/manager/Logs/clear_old`
 
-## 📦 Geração de Coleção Postman
+## Geração de Coleção Postman
 
 O AutoRouter pode gerar automaticamente uma **coleção Postman (v2.1)** completa com todos os endpoints disponíveis, incluindo rotas customizadas.
 
 ### Para Que Serve?
 
-- 📝 **Documentação automática** da sua API
-- 🧪 **Testes rápidos** sem precisar escrever código
-- 👥 **Compartilhamento** com equipe de front-end ou QA
-- 🔄 **Atualização instantânea** quando você adiciona novas tabelas
+- Documentação automática da sua API
+- Testes rápidos sem precisar escrever código
+- Compartilhamento com equipe de front-end ou QA
+- Atualização instantânea quando você adiciona novas tabelas
 
 ### Como Gerar a Coleção
 
@@ -427,8 +427,8 @@ collection = router.generate_collection(
 with open('postman_collection.json', 'w', encoding='utf-8') as f:
     json.dump(collection, f, indent=2, ensure_ascii=False)
 
-print("✅ Coleção Postman gerada: postman_collection.json")
-print(f"📊 Total de tabelas: {len(collection['item'])}")
+print("Coleção Postman gerada: postman_collection.json")
+print(f"Total de tabelas: {len(collection['item'])}")
 ```
 
 **Opção 2: Via Endpoint Flask**
@@ -479,7 +479,7 @@ A coleção Postman inclui **todas as rotas** por tabela:
 1. Abra o Postman
 2. Clique em **Import**
 3. Selecione o arquivo `postman_collection.json`
-4. ✅ Todas as rotas estarão prontas para teste!
+4. Todas as rotas estarão prontas para teste!
 
 ### Configuração do Sufixo da URL
 
@@ -496,7 +496,7 @@ CoreConfig.configure_router({
 
 ---
 
-## 🔍 Listando Rotas Registradas
+## Listando Rotas Registradas
 
 Para ver todas as rotas que foram registradas automaticamente, use o método `get_registered_routes()`:
 
@@ -512,39 +512,39 @@ router = AutoRouter(db, app=app)
 # Obtém informações sobre todas as rotas
 routes_info = router.get_registered_routes()
 
-print("\n📋 Rotas Registradas Automaticamente:")
+print("\n\nRotas Registradas Automaticamente:")
 print("=" * 80)
 for table_name, routes in routes_info.items():
-    print(f"\n📦 Tabela: {table_name}")
+    print(f"\nTabela: {table_name}")
     for route in routes:
-        print(f"  {route['method']:7} {route['endpoint']:45} → {route['description']}")
+        print(f"  {route['method']:7} {route['endpoint']:45} -> {route['description']}")
 
-print(f"\n✅ Total: {sum(len(r) for r in routes_info.values())} rotas em {len(routes_info)} tabelas")
+print(f"\nTotal: {sum(len(r) for r in routes_info.values())} rotas em {len(routes_info)} tabelas")
 ```
 
 **Saída exemplo:**
 ```
-📋 Rotas Registradas Automaticamente:
+Rotas Registradas Automaticamente:
 ================================================================================
 
-📦 Tabela: Products
-  GET     /manager/Products                             → Listar Products
-  GET     /manager/Products/{id}                        → Obter Products por ID
-  POST    /manager/Products                             → Criar Products
-  PATCH   /manager/Products/{id}                        → Atualizar Products
-  DELETE  /manager/Products/{id}                        → Deletar Products
-  GET     /manager/Products/active                      → Rota customizada: active
+Tabela: Products
+  GET     /manager/Products                             -> Listar Products
+  GET     /manager/Products/{id}                        -> Obter Products por ID
+  POST    /manager/Products                             -> Criar Products
+  PATCH   /manager/Products/{id}                        -> Atualizar Products
+  DELETE  /manager/Products/{id}                        -> Deletar Products
+  GET     /manager/Products/active                      -> Rota customizada: active
 
-📦 Tabela: Customers
-  GET     /manager/Customers                            → Listar Customers
-  GET     /manager/Customers/{id}                       → Obter Customers por ID
+Tabela: Customers
+  GET     /manager/Customers                            -> Listar Customers
+  GET     /manager/Customers/{id}                       -> Obter Customers por ID
 
-✅ Total: 8 rotas em 2 tabelas
+Total: 8 rotas em 2 tabelas
 ```
 
 ---
 
-## 🧪 Testando Rotas (Debug)
+## Testando Rotas (Debug)
 
 Para verificar como o `AutoRouter` processa requisições sem subir um servidor:
 
@@ -613,10 +613,10 @@ def _pre_handle(func):
 ```
 
 **Problemas:**
-- ❌ Não funcionava corretamente com `self` ausente
-- ❌ Mapeamento frágil de argumentos posicionais vs nomeados
-- ❌ Não validava assinatura da função
-- ❌ Difícil de manter e estender
+- Não funcionava corretamente com `self` ausente
+- Mapeamento frágil de argumentos posicionais vs nomeados
+- Não validava assinatura da função
+- Difícil de manter e estender
 
 **Depois (v4.0):**
 ```python
@@ -645,11 +645,11 @@ def _pre_handle(func):
 ```
 
 **Benefícios:**
-- ✅ Type-safe: valida assinatura automaticamente
-- ✅ Funciona com argumentos nomeados e posicionais
-- ✅ Extração robusta de `self` e outros parâmetros
-- ✅ Injeção de dependências (`_table`, `_table_config`)
-- ✅ Fácil de testar e manter
+- Type-safe: valida assinatura automaticamente
+- Funciona com argumentos nomeados e posicionais
+- Extração robusta de `self` e outros parâmetros
+- Injeção de dependências (`_table`, `_table_config`)
+- Fácil de testar e manter
 
 ### Exemplo de Uso
 
@@ -692,7 +692,7 @@ def test_decorator_with_positional_arguments(self):
 
 ---
 
-## 🆕 Atualização v4.0 - Registro Automático Flask (27/02/2026)
+## Atualização v4.0 - Registro Automático Flask (27/02/2026)
 
 ### Mudanças Implementadas
 
@@ -726,10 +726,10 @@ routes = router.get_registered_routes()
 
 #### 4. **Método `generate_collection()` Melhorado**
 Agora gera **coleção Postman completa**:
-- ✅ Todas as rotas por tabela (não apenas uma)
-- ✅ Rotas customizadas (GET/DELETE)
-- ✅ Estrutura Postman v2.1 completa
-- ✅ Informações de metadados
+- Todas as rotas por tabela (não apenas uma)
+- Rotas customizadas (GET/DELETE)
+- Estrutura Postman v2.1 completa
+- Informações de metadados
 
 ### Arquivos Criados
 - `SQLManager/controller/example_autorouter_usage.py` - Exemplos de uso completos
@@ -737,7 +737,7 @@ Agora gera **coleção Postman completa**:
 
 ---
 
-## 📚 Referências e Exemplos
+## Referências e Exemplos
 
 ### Exemplo Completo de Aplicação Flask
 
@@ -758,7 +758,7 @@ Veja [`test_AutoRouter.py`](../../tests/test_AutoRouter.py) para exemplos de:
 
 ---
 
-## 🎓 Autores e Histórico
+## Autores e Histórico
 
 | Versão | Data | Autor | Mudanças |
 |--------|------|-------|----------|

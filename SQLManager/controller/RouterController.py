@@ -196,18 +196,30 @@ class AutoRouter:
         suffix = self.config.get('url_suffix', 'manager').strip('/')
         tables = self._discover_tables()
         
+        if not tables:
+            print(f"{SystemController.custom_text('[AutoRouter]', 'yellow')} Nenhuma tabela encontrada para registro de rotas.")
+            return
+        
+        print(f"{SystemController.custom_text('[AutoRouter]', 'green')} Registrando rotas automáticas...")
+        total_routes = 0
+        
         for table_name in tables:
             table_upper = table_name.upper()
             table_config = self._tables_config.get(table_upper, {})
             allowed_methods = table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
             
             # Cria closures para cada tabela (evita problema de binding tardio)
-            self._register_table_routes(table_name, allowed_methods, suffix)
+            routes_count = self._register_table_routes(table_name, allowed_methods, suffix)
+            total_routes += routes_count
+        
+        print(f"{SystemController.custom_text('[AutoRouter]', 'green')} Total: {total_routes} rotas registradas para {len(tables)} tabela(s).")
     
-    def _register_table_routes(self, table_name: str, allowed_methods: List[str], suffix: str):
+    def _register_table_routes(self, table_name: str, allowed_methods: List[str], suffix: str) -> int:
         """
         Registra rotas Flask para uma tabela específica.
+        Retorna o número de rotas criadas.
         """
+        routes_created = 0
         # Rota para lista/criação: /{suffix}/{table}
         base_route = f"/{suffix}/{table_name}"
         list_methods = [m for m in ['GET', 'POST'] if m in allowed_methods]
@@ -229,6 +241,10 @@ class AutoRouter:
                 
                 status = result.pop('status', 200)
                 return jsonify(result), status
+            
+            for method in list_methods:
+                print(f"  {method:7} {base_route}")
+                routes_created += 1
         
         # Rota para operações com ID: /{suffix}/{table}/{id}
         detail_route = f"{base_route}/<path:resource_path>"
@@ -254,6 +270,12 @@ class AutoRouter:
                 
                 status = result.pop('status', 200)
                 return jsonify(result), status
+            
+            for method in detail_methods:
+                print(f"  {method:7} {detail_route}")
+                routes_created += 1
+        
+        return routes_created
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 27/02/2026 '''
 
     def _get_field_map(self) -> Dict[str, str]:
