@@ -1,11 +1,12 @@
-#[BEGIN CODE] Project: SQLManager / Issue #2 / made by: {Heitor Rolim} / created: {02/03/2026}
-from TableController import TableController
+#[BEGIN CODE] Project: SQLManager / Issue #2 / made by: {Heitor Rolim} / created: {03/03/2026}
+from typing import Self
+from .BaseEnumController import *
 
-class NumberSequenceControler:
+class NumberSequenceController:
 
-    def __init__(self, db):
-        self.Header = TableController(db, "NumberSequenceTable")
-        self.Lines  = TableController(db, "NumberSequenceLines")
+    def __init__(self, Head, Line):
+        self.Header = Head
+        self.Lines  = Line
         self.limit  = 20
 
 
@@ -19,11 +20,11 @@ class NumberSequenceControler:
         if reference == 0:
             return {"message": "Reference cannot be zero"}
         
-        self.Header.select().where(self.Header.RECID == reference).join(self.Lines).on(self.Header.RECID == self.Lines.REFRECID).order_by(self.Lines.LINENUM).execute()
-        if self.Header.rowcount() == 0 or self.Lines.rowcount() == 0:
+        self.Header.select().where(self.Header.RECID == reference).join(self.Lines).on(self.Header.RECID == self.Lines.REFRECID).execute()
+        if not self.Header.records or not self.Lines.records:
             return {"message": "Sequence not found"}
         
-        pad = len(str(self.HEADER.MAXNUM))
+        pad = len(str(self.Header.MAXNUM))
 
         return self.formatSequence(self.Lines.records, self.Header.CURNUM.value, pad)
     
@@ -68,24 +69,44 @@ class NumberSequenceControler:
             if not self.Lines.records:
                 return {"message": "Unable to find a suitable sequence to formar"}
             print("formating stored sequence")    
-        
-        parts = self.Lines.records
-        ret = [len(parts)]
-        for each in parts:
-            if each.PARTTYPE.value == int: #TODO: colocar o ENUM pra usar de alfaNum para poder arrumar o padding
-                ret[each.LINENUM.value] = str(number).rjust(padding, "0")
-            else:
-                ret[each.LINENUM.value] = each.SEQPART.value
-        
-        return str.join(ret)
 
-    def createNumberSequence(self, header: dict, lines: list):
+        parts = self.Lines.records
+        ret = [""] * len(parts)
+        for each in parts:
+            if each["PIECETYPE"] == SequenceTypes.NUMERIC.value: 
+                ret[each["LINENUM"]-1] = str(number).rjust(padding, "0")
+            else:
+                ret[each["LINENUM"]-1] = each["SEQPIECE"]
+        
+        return "".join(ret)
+
+    def createNumberSequence(self, header:dict, lines:list):
         """
             Função para criar uma nova sequencia numerica
 
-            :param header: Dicionario com todos os valores que serão inseridos no header
-            :type header: dict
-            :param lines: Lista com dicionario contanto o valor que deve ser inserido a cada linha 
+            header: dict
+                Dicionario com os valores do cabeçalho da sequencia
+                ``seqId``   : str
+                    O indentificador da sequencia
+                ``name``    : str
+                    O nome da sequencia
+                ``desc``    : str
+                    A descrição da sequencia, caso necessario
+                ``isdis``   : bool
+                    1 caso a sequencia esteja desativado, 0 caso não esteja
+                ``minnum``  : int
+                    A quantidade numerica minima da sequencia
+                ``maxnum``  : int
+                    A quantidade numerica maxima da sequencia
+            lines: list
+                Lista contendo os dicionarios para as linhas que contem as partes da sequencia
+                ``pieceType``: int
+                    Tipo da parte da sequencia
+                ``piece``: str
+                    Parte da sequencia
+                ``place``: int
+                    Posição dentro da sequencia
+                
         """
         try:
             self.Header.SEQUENCEID  = header["seqId"]
@@ -98,20 +119,21 @@ class NumberSequenceControler:
             self.Header.CURNUM      = header["minnum"]
             self.Header.NEXTNUM     = header["minnum"] + 1
             self.Header.insert()
-            self.Header.select().where(self.Header.SEQUENCEID == header.seqId and self.Header.NAMEALIAS == header.name)
+            self.Header.select().where(self.Header.SEQUENCEID == header["seqId"] and self.Header.NAMEALIAS == header["name"])
 
             for each in lines:
                 self.Lines.REFRECID  = self.Header.RECID.value
-                if each["partType"] == int: #TODO: colocar o ENUM pra usar de alfaNum para poder arrumar o padding
-                    self.Lines.PIECETYPE = each["partType"]
+                if each["pieceType"] == SequenceTypes.NUMERIC.value: #TODO: colocar o ENUM pra usar de alfaNum para poder arrumar o padding
+                    self.Lines.PIECETYPE = each["pieceType"]
+                    self.Lines.SEQPIECE  = None
                     self.Lines.LINENUM   = each["place"]
                 else:
-                    self.Lines.PIECETYPE = each["partType"]
-                    self.Lines.SEQPIECE  = each["part"]
+                    self.Lines.PIECETYPE = each["pieceType"]
+                    self.Lines.SEQPIECE  = each["piece"]
                     self.Lines.LINENUM   = each["place"]
                 self.Lines.insert()
 
-            return {"status": True, "message": "Sequence created susscefully"}    
+            return {"status": True, "message": "Sequence created suscefully"}    
         except Exception as e:
             print("error: ", e)
             return {"status": False, "message": f"Unable to create due to: {e}"}
@@ -119,6 +141,11 @@ class NumberSequenceControler:
     def updateNumberSequence(self, reference:int, changes: dict):
         """
             Função para atualizar um ou mais valores de uma sequencia numerica
+
+            :param reference: O RECID da Header que será atualizada
+            :type reference: int
+            :param changes: A mudanças que serão feitas, a chave deve ter o nome maiusculo. Não é recomendado fazer mudanças à ordem da sequencia.
+            :param changes: dict
         """
         try:
             self.Header.select().where(self.Header.RECID == reference).join(self.Lines, 'INNER').on(self.Header.RECID == self.Lines.REFRECID)
@@ -142,4 +169,12 @@ class NumberSequenceControler:
         """
         print("placeholder")
 
-#[END CODE] Project: SQLManager / Issue #2 / made by: {Heitor Rolim} / created: {02/03/2026}
+class SequenceTypes(BaseEnumController.Enum):
+    """
+    Enumeração de status da inspeção (int/texto), com label descritivo.
+    """
+    UNDEFINED       : Self = (0, "Indefinido")
+    CONSTANT        : Self = (1, "Constante")
+    SEPARATOR       : Self = (2, "Separador")
+    NUMERIC         : Self = (3, "Numeric")
+#[END CODE] Project: SQLManager / Issue #2 / made by: {Heitor Rolim} / created: {03/03/2026}
