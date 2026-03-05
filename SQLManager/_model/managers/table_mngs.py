@@ -231,7 +231,7 @@ class Table_Manager:
         lines.append("        db_controller: Banco de dados ou transação")
         lines.append("    '''")
         lines.append("    def __init__(self, db):")
-        lines.append(f"        super().__init__(db=db, table_name=\"{table_name}\")")
+        lines.append(f"        super().__init__(db=db, source_name=\"{table_name}\")")
         lines.append("    ")
         
         for col in columns:
@@ -263,7 +263,7 @@ class Table_Manager:
         lines.append("        db_controller: Banco de dados ou transação")
         lines.append("    '''")
         lines.append("    def __init__(self, db):")
-        lines.append(f"        super().__init__(db=db, table_name=\"{table_name}\")")
+        lines.append(f"        super().__init__(db=db, source_name=\"{table_name}\")")
         lines.append("    ")
                 
         for col in columns:
