@@ -7,6 +7,7 @@ import importlib
 import inspect
 import json
 import os
+import time
 import traceback
 from unittest import case
 
@@ -63,6 +64,7 @@ class AutoRouter:
         self._class_cache:     Dict[str, Any]            = {}
         self._field_map_cache: Dict[str, Dict[str, str]] = {}
         self._is_view_cache:   Dict[str, bool]           = {}  # Cache para saber se é View
+        self._table_count_cache: Dict[str, tuple]        = {}  # Cache de total: {table_name: (timestamp, count)}
         
         # Registra rotas Flask automaticamente se app foi fornecido
         if self.app and self.enabled:
@@ -456,17 +458,29 @@ class AutoRouter:
     def _get_table_total(self, table: TableController, where_condition=None) -> int:
         """Retorna o total de registros na tabela (com ou sem filtro)"""
         try:
-            if where_condition is not None:
-                # Conta com filtro
+            # Cache apenas para totais SEM filtro (mais comum)
+            if where_condition is None:
+                table_name = table.source_name
+                cache_ttl = 60  # 60 segundos de cache
+                
+                # Verifica cache
+                if table_name in self._table_count_cache:
+                    cached_time, cached_count = self._table_count_cache[table_name]
+                    if time.time() - cached_time < cache_ttl:
+                        return cached_count
+                
+                # Calcula e cacheia
+                total = table.get_table_total()
+                self._table_count_cache[table_name] = (time.time(), total)
+                return total
+            else:
+                # Com filtro: sempre recalcula
                 from ..controller.managers import Select_Manager
                 select = Select_Manager.SelectQuery(table)
                 select.where(where_condition)
                 query = select._build_count_query()
                 result = table.db.execute(query)
                 return result[0][0] if result else 0
-            else:
-                # Total sem filtro
-                return table.get_table_total()
         except:
             return 0
         
@@ -474,6 +488,9 @@ class AutoRouter:
         try:
             field_map = self._get_field_map()
             relation_names = self._get_relation_names(table)
+            
+            # Verifica se deve incluir relations (opt-in para performance)
+            include_relations = params.get('include_relations', '').lower() in ('true', '1', 'yes')
 
             # Rota: GET /{table}/{id}
             if path_parts and path_parts[0].isdigit():                                
@@ -481,8 +498,8 @@ class AutoRouter:
                 if table.exists(table.RECID == recid):
                     select_query = table.select().where(table.RECID == recid)
                     
-                    # Adiciona relations automaticamente se houver
-                    if relation_names:
+                    # Adiciona relations APENAS se requisitado
+                    if include_relations and relation_names:
                         select_query.with_relations(*relation_names)
                     
                     select_query.execute()
@@ -512,8 +529,8 @@ class AutoRouter:
                             cols = [getattr(table, c) for c in route['columns'] if hasattr(table, c)]
                             select_query.columns(cols)
                         
-                        # Adiciona relations automaticamente se houver
-                        if relation_names:
+                        # Adiciona relations APENAS se requisitado
+                        if include_relations and relation_names:
                             select_query.with_relations(*relation_names)
                         
                         select_query.execute()
@@ -568,7 +585,8 @@ class AutoRouter:
                 # Monta query com ordem CORRETA: select -> where -> relations -> limit/offset
                 select_query = table.select().where(where_condition)
                 
-                if relation_names:
+                # Relations APENAS se requisitado (performance!)
+                if include_relations and relation_names:
                     select_query = select_query.with_relations(*relation_names)
                 
                 select_query = select_query.limit(limit).offset(offset)
@@ -577,23 +595,31 @@ class AutoRouter:
             # Monta query com ordem CORRETA: select -> relations -> limit/offset
             select_query = table.select()
             
-            if relation_names:
+            # Relations APENAS se requisitado (performance!)
+            if include_relations and relation_names:
                 select_query = select_query.with_relations(*relation_names)
             
             select_query = select_query.limit(limit).offset(offset)
             select_query.execute()
 
-        # Calcula total de registros (para paginação correta)
-        total = self._get_table_total(table, where_condition)
+        # Calcula total de registros (pode ser desabilitado para performance)
+        if params.get('no_count', '').lower() in ('true', '1', 'yes'):
+            total = -1  # Indica que count foi pulado
+        else:
+            total = self._get_table_total(table, where_condition)
         
         # SLICE DEFENSIVO: garante que NUNCA retorna mais que o limit
         records_to_serialize = table.records[:limit] if len(table.records) > limit else table.records
         data = [self._serialize(r, field_map) for r in records_to_serialize]
         
+        meta = {"page": page, "limit": limit, "count": len(data)}
+        if total != -1:
+            meta["total"] = total
+        
         return {
             "status": 200, 
             "data": data,
-            "meta": {"page": page, "limit": limit, "count": len(data), "total": total}
+            "meta": meta
         }
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
     
