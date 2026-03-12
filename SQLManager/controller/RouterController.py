@@ -345,7 +345,7 @@ class AutoRouter:
         field_map = {}
         # Atributos internos a ignorar
         ignore = {
-            'db', 'source_name', 'table_name', 'records', 'Columns', 'Indexes', 'ForeignKeys', 
+            'db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys', 
             'isUpdate', 'controller', 'select', 'insert', 'update', 'delete',
             'insert_recordset', 'update_recordset', 'delete_from', 'field',
             'exists', 'validate_fields', 'validate_write', 'clear', 'set_current',
@@ -678,7 +678,7 @@ class AutoRouter:
                     rel_field_map = {}
                     
                     ignore = {
-                        'db', 'source_name', 'table_name', 'records', 'Columns', 'Indexes', 'ForeignKeys', 
+                        'db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys', 
                         'isUpdate', 'controller', 'select', 'insert', 'update', 'delete',
                         'insert_recordset', 'update_recordset', 'delete_from', 'field',
                         'exists', 'validate_fields', 'validate_write', 'clear', 'set_current',
