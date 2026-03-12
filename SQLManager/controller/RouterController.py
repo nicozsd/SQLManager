@@ -254,6 +254,21 @@ class AutoRouter:
         
         total_routes = 0
         
+        # Registra rota de múltiplas tabelas: GET /manager?tbls=Products,Categories
+        @self.app.route(f"/{suffix}", methods=['GET'], endpoint="multi_table_get")
+        def multi_get():
+            query_params = request.args.to_dict(flat=False)  # Preserva múltiplos valores
+            # Converte para dict simples se necessário
+            params_dict = {}
+            for k, v in query_params.items():
+                params_dict[k] = v[0] if len(v) == 1 else v
+            
+            result = self.handle_multi_get(params_dict)
+            status = result.pop('status', 200)
+            return jsonify(result), status
+        
+        total_routes += 1
+        
         for table_name in tables:
             table_upper = table_name.upper()
             table_config = self._tables_config.get(table_upper, {})
@@ -437,6 +452,23 @@ class AutoRouter:
         if hasattr(table, 'relations') and table.relations:
             return list(table.relations.keys())
         return []
+    
+    def _get_table_total(self, table: TableController, where_condition=None) -> int:
+        """Retorna o total de registros na tabela (com ou sem filtro)"""
+        try:
+            if where_condition is not None:
+                # Conta com filtro
+                from ..controller.managers import Select_Manager
+                select = Select_Manager.SelectQuery(table)
+                select.where(where_condition)
+                query = select._build_count_query()
+                result = table.db.execute(query)
+                return result[0][0] if result else 0
+            else:
+                # Total sem filtro
+                return table.get_table_total()
+        except:
+            return 0
         
     def _handle_get(self, table: TableController, path_parts: List[str], params: Dict, config: Dict):        
         try:
@@ -499,8 +531,9 @@ class AutoRouter:
         except ValueError:
             return {"status": 400, "error": "Invalid pagination parameters"}
 
-        offset = (page - 1) * limit                                
-    
+        offset = (page - 1) * limit
+        where_condition = None
+        
         if params and len(params) > 0 and any(k not in ('page', 'limit') for k in params):
             for key, value in params.items():
                 if key in ('page', 'limit'):
@@ -522,27 +555,19 @@ class AutoRouter:
             if real_field_name:
                 field_attr = table.field(real_field_name)
                 
-                # Cria select base
-                select_query = table.select().where(field_attr == value).limit(limit).offset(offset)
-                
                 # Aplica operador específico
                 match operator:
-                    #equal / igual
-                    case 'eq':   select_query = table.select().where(field_attr == value).limit(limit).offset(offset)
-                    #greater than / maior que
-                    case 'gt':   select_query = table.select().where(field_attr > value).limit(limit).offset(offset)
-                    #greater than or equal / maior ou igual
-                    case 'gte':  select_query = table.select().where(field_attr >= value).limit(limit).offset(offset)
-                    #less than / menor que
-                    case 'lt':   select_query = table.select().where(field_attr < value).limit(limit).offset(offset)
-                    #less than or equal / menor ou igual
-                    case 'lte':  select_query = table.select().where(field_attr <= value).limit(limit).offset(offset)
-                    #not equal / diferente
-                    case 'neq':  select_query = table.select().where(field_attr != value).limit(limit).offset(offset)
-                    # like / similar a (usa SQL LIKE, suporta % e _)
-                    case 'like': select_query = table.select().where(field_attr.like(str(value))).limit(limit).offset(offset)
+                    case 'eq':   where_condition = (field_attr == value)
+                    case 'gt':   where_condition = (field_attr > value)
+                    case 'gte':  where_condition = (field_attr >= value)
+                    case 'lt':   where_condition = (field_attr < value)
+                    case 'lte':  where_condition = (field_attr <= value)
+                    case 'neq':  where_condition = (field_attr != value)
+                    case 'like': where_condition = field_attr.like(str(value))
                 
-                # Adiciona relations automaticamente se houver
+                select_query = table.select().where(where_condition).limit(limit).offset(offset)
+                
+                # Adiciona relations automaticamente se houver (COM LIMITE!)
                 if relation_names:
                     select_query.with_relations(*relation_names)
                 
@@ -550,21 +575,109 @@ class AutoRouter:
         else:
             select_query = table.select().limit(limit).offset(offset)
             
-            # Adiciona relations automaticamente se houver
+            # Adiciona relations automaticamente se houver (COM LIMITE!)
             if relation_names:
                 select_query.with_relations(*relation_names)
             
             select_query.execute()
 
+        # Calcula total de registros (para paginação correta)
+        total = self._get_table_total(table, where_condition)
         data = [self._serialize(r, field_map) for r in table.records]
         
         return {
             "status": 200, 
             "data": data,
-            "meta": {"page": page, "limit": limit, "count": len(data)}
+            "meta": {"page": page, "limit": limit, "count": len(data), "total": total}
         }
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
     
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #6 / made by: Nicolas Santos / created: 12/03/2026 '''
+    def handle_multi_get(self, query_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Retorna múltiplas tabelas de uma só vez.
+        Rota: GET /manager?tbls=Products,Categories&limit=10
+        
+        Args:
+            query_params: {'tbls': 'Products,Categories', 'limit': '10'}
+            
+        Returns:
+            Dict com formato: {
+                'status': 200,
+                'data': {
+                    'Products': [...],
+                    'Categories': [...]
+                },
+                'meta': {'tables_count': 2}
+            }
+        """
+        if not self.enabled:
+            return {"status": 404, "error": "AutoRouter is disabled"}
+        
+        # Extrai lista de tabelas
+        tbls_param = query_params.get('tbls', '')
+        if not tbls_param:
+            return {"status": 400, "error": "Missing 'tbls' parameter"}
+        
+        # Suporta tanto ?tbls=usr&tbls=sup quanto ?tbls=usr,sup
+        table_names = []
+        if isinstance(tbls_param, list):
+            for t in tbls_param:
+                table_names.extend([x.strip() for x in str(t).split(',') if x.strip()])
+        else:
+            table_names = [x.strip() for x in str(tbls_param).split(',') if x.strip()]
+        
+        if not table_names:
+            return {"status": 400, "error": "No valid table names provided"}
+        
+        # Limites globais
+        try:
+            limit = int(query_params.get('limit', 50))  # Default menor para múltiplas tabelas
+        except ValueError:
+            limit = 50
+        
+        results = {}
+        errors = {}
+        
+        for table_name in table_names:
+            try:
+                # Verifica se tabela existe e não está excluída
+                table_upper = table_name.upper()
+                if table_upper in self._exclude_tables:
+                    errors[table_name] = "Access restricted"
+                    continue
+                
+                TableClass = self._get_table_class_by_name(table_name)
+                if not TableClass:
+                    errors[table_name] = "Table not found"
+                    continue
+                
+                # Instancia e executa select
+                table = TableClass(self.db)
+                table.select().limit(limit).execute()
+                
+                # Serializa usando field map
+                temp_table = self.current_table
+                self.current_table = table
+                field_map = self._get_field_map()
+                
+                results[table_name] = [self._serialize_simple(r, field_map) for r in table.records]
+                self.current_table = temp_table
+                
+            except Exception as e:
+                errors[table_name] = str(e)
+        
+        response = {
+            "status": 200 if results else 404,
+            "data": results,
+            "meta": {"tables_count": len(results), "limit_per_table": limit}
+        }
+        
+        if errors:
+            response["errors"] = errors
+        
+        return response
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #6 / made by: Nicolas Santos / created: 12/03/2026 '''
 
     def _handle_post(self, table: TableController, body: Dict):
         field_map = self._get_field_map()
@@ -649,10 +762,13 @@ class AutoRouter:
             return {"status": 500, "error": str(e)}
 
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
-    def _serialize(self, record_obj, field_map: Dict[str, str]) -> Dict:
+    def _serialize(self, record_obj, field_map: Dict[str, str], max_relations: int = 100) -> Dict:
         """
         Serializa uma instância de TableController para dict usando mapa de campos.
-        Inclui automaticamente relations se houver.
+        Inclui automaticamente relations se houver (COM LIMITE).
+        
+        Args:
+            max_relations: Máximo de records de relations a incluir (evita sobrecarga)
         """
         if isinstance(record_obj, dict):
             return record_obj
@@ -667,7 +783,7 @@ class AutoRouter:
             except:
                 pass
         
-        # Serializa relations automaticamente se houver
+        # Serializa relations automaticamente se houver (COM LIMITE!)
         if hasattr(self.current_table, 'relations') and self.current_table.relations:
             relations_data = {}
             for rel_name, relation_manager in self.current_table.relations.items():
@@ -690,11 +806,17 @@ class AutoRouter:
                         if attr not in ignore and not attr.startswith('_') and not callable(val):
                             rel_field_map[attr.upper()] = attr
                     
-                    # Serializa todos os records da relation
+                    # LIMITA relations para não explodir o response!
+                    limited_records = relation_manager.records[:max_relations]
                     relations_data[rel_name] = [
                         self._serialize_simple(rec, rel_field_map) 
-                        for rec in relation_manager.records
+                        for rec in limited_records
                     ]
+                    
+                    # Indica se houve truncamento
+                    if len(relation_manager.records) > max_relations:
+                        relations_data[f"{rel_name}_truncated"] = True
+                        relations_data[f"{rel_name}_total"] = len(relation_manager.records)
             
             if relations_data:
                 data['relations'] = relations_data
