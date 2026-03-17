@@ -150,17 +150,27 @@ class Table_Manager:
             return {'table': table_name, 'reason': f'Erro ao gerar código: {str(e)}'}
     
     def _update_existing_table(_model, table_name: str, columns, table_file: Path) -> str:
-        '''Atualiza tabela existente preservando métodos customizados'''
+        '''Atualiza tabela existente preservando métodos customizados e relations'''
         import re
         
         with open(table_file, 'r', encoding='utf-8') as f:
             existing_content = f.read()
+        
+        # Extrai e preserva bloco self.relations (se existir)
+        relations_block = None
+        relations_pattern = r'(self\.relations\s*=\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\})'
+        relations_match = re.search(relations_pattern, existing_content, re.DOTALL)
+        if relations_match:
+            relations_block = relations_match.group(1)
         
         existing_fields = {}
         field_pattern = r'self\.(\w+)\s*=\s*(.+)'
         for match in re.finditer(field_pattern, existing_content):
             field_name = match.group(1)
             field_value = match.group(2).strip()
+            # Ignora "relations" - é um campo reservado para relacionamentos
+            if field_name == 'relations':
+                continue
             existing_fields[field_name] = field_value
         
         new_fields = {}
@@ -171,6 +181,11 @@ class Table_Manager:
             col_name = col[0].upper()
             sql_type = col[1].lower()
             max_length = col[3]
+            
+            # Valida que campo não use nome reservado "relations"
+            if col_name.upper() == 'RELATIONS':
+                raise ValueError(f"Tabela {table_name}: campo 'RELATIONS' é reservado para relacionamentos e não pode ser usado no banco de dados")
+            
             db_field_names.add(col_name)
             
             new_field_type = Table_Manager._detect_field_type(_model, col_name, sql_type, max_length)
@@ -233,6 +248,15 @@ class Table_Manager:
         lines.append("    def __init__(self, db):")
         lines.append(f"        super().__init__(db=db, source_name=\"{table_name}\")")
         lines.append("    ")
+        
+        # Adiciona bloco self.relations preservado (se existir)
+        if relations_block:
+            lines.append("")
+            # Formata o bloco relations com indentação correta
+            relations_lines = relations_block.split('\n')
+            for rel_line in relations_lines:
+                if rel_line.strip():
+                    lines.append(f"        {rel_line.strip()}")
         
         for col in columns:
             col_name = col[0].upper()
