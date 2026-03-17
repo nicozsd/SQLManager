@@ -481,7 +481,7 @@ class AutoRouter:
                     select_query.execute()
 
                     if table.records:
-                        return {"status": 200, "data": self._serialize(table.records[0], field_map)}
+                        return {"status": 200, "data": self._serialize(table.records[0], field_map, include_relations=include_relations)}
                         
                 return {"status": 404, "error": "Record not found"}
             
@@ -511,7 +511,7 @@ class AutoRouter:
                         
                         select_query.execute()
 
-                        data = [self._serialize(r, field_map) for r in table.records]
+                        data = [self._serialize(r, field_map, include_relations=include_relations) for r in table.records]
                         return {"status": 200, "data": data, "meta": {"count": len(data)}}                    
                     except Exception as e:
                         return {"status": 500, "error": f"Custom route error: {str(e)}"}
@@ -568,7 +568,7 @@ class AutoRouter:
         select_query.execute()
         
         # Serializa resultados
-        data = [self._serialize(r, field_map) for r in table.records]
+        data = [self._serialize(r, field_map, include_relations=include_relations) for r in table.records]
         
         # Total é DESABILITADO por padrão (performance em tabelas grandes!)
         # Use ?include_total=true se precisar do count total
@@ -696,7 +696,7 @@ class AutoRouter:
                     # Busca dados completos do registro inserido
                     table.select().where(table.RECID == recid_value).execute()
                     if table.records:
-                        data = self._serialize(table.records[0], field_map)
+                        data = self._serialize(table.records[0], field_map, include_relations=False)
                         self.ws_manager.broadcast_insert(table.source_name, recid_value, data)
                     else:
                         # Fallback: notificação simples
@@ -737,7 +737,7 @@ class AutoRouter:
                     # Busca dados atualizados
                     table.select().where(table.RECID == recid).execute()
                     if table.records:
-                        data = self._serialize(table.records[0], field_map)
+                        data = self._serialize(table.records[0], field_map, include_relations=False)
                         self.ws_manager.broadcast_update(table.source_name, recid, data)
                     else:
                         # Fallback: notificação simples
@@ -787,66 +787,80 @@ class AutoRouter:
             return {"status": 500, "error": str(e)}
 
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
-    def _serialize(self, record_obj, field_map: Dict[str, str], max_relations: int = 100) -> Dict:
+    def _serialize(self, record_obj, field_map: Dict[str, str], max_relations: int = 100, include_relations: bool = False) -> Dict:
         """
         Serializa uma instância de TableController para dict usando mapa de campos.
         Inclui automaticamente relations se houver (COM LIMITE).
         
         Args:
             max_relations: Máximo de records de relations a incluir (evita sobrecarga)
+            include_relations: Se True, inclui relations filtradas por este record
         """
         if isinstance(record_obj, dict):
-            return record_obj
-            
-        data = {}
-        # Itera apenas sobre os campos mapeados da tabela
-        for real_name in field_map.values():
-            try:
-                val = getattr(record_obj, real_name)
-                if callable(val): continue
-                data[real_name] = val
-            except:
-                pass
+            record_dict = record_obj
+        else:
+            record_dict = {}
+            # Itera apenas sobre os campos mapeados da tabela
+            for real_name in field_map.values():
+                try:
+                    val = getattr(record_obj, real_name)
+                    if callable(val): continue
+                    record_dict[real_name] = val
+                except:
+                    pass
         
         # Serializa relations automaticamente se houver (COM LIMITE!)
-        if hasattr(self.current_table, 'relations') and self.current_table.relations:
-            relations_data = {}
+        if include_relations and hasattr(self.current_table, 'relations') and self.current_table.relations:
             for rel_name, relation_manager in self.current_table.relations.items():
                 # Pega os records da relation
                 if hasattr(relation_manager, 'records') and relation_manager.records:
-                    # Pega o field_map da tabela relacionada
-                    rel_instance = relation_manager.get_instance()
-                    rel_field_map = {}
+                    # Identifica os campos de relação (source_field e target_field)
+                    source_field_name = relation_manager._extract_field_name(relation_manager.source_field)
+                    target_field_name = relation_manager._extract_field_name(relation_manager.target_field)
                     
-                    ignore = {
-                        'db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys', 
-                        'isUpdate', 'controller', 'select', 'insert', 'update', 'delete',
-                        'insert_recordset', 'update_recordset', 'delete_from', 'field',
-                        'exists', 'validate_fields', 'validate_write', 'clear', 'set_current',
-                        'get_table_columns', 'get_table_index', 'get_table_foreign_keys', 'get_table_total',
-                        'SelectForUpdate', 'get_columns_with_defaults', 'relations'
-                    }
+                    # Pega o valor do campo de relação no record atual
+                    source_value = record_dict.get(source_field_name)
                     
-                    for attr, val in rel_instance.__dict__.items():
-                        if attr not in ignore and not attr.startswith('_') and not callable(val):
-                            rel_field_map[attr.upper()] = attr
+                    if source_value is None:
+                        continue
                     
-                    # LIMITA relations para não explodir o response!
-                    limited_records = relation_manager.records[:max_relations]
-                    relations_data[rel_name] = [
-                        self._serialize_simple(rec, rel_field_map) 
-                        for rec in limited_records
+                    # Filtra os records da relation que pertencem a este record
+                    filtered_records = [
+                        rec for rec in relation_manager.records 
+                        if rec.get(target_field_name) == source_value
                     ]
                     
-                    # Indica se houve truncamento
-                    if len(relation_manager.records) > max_relations:
-                        relations_data[f"{rel_name}_truncated"] = True
-                        relations_data[f"{rel_name}_total"] = len(relation_manager.records)
-            
-            if relations_data:
-                data['relations'] = relations_data
+                    if filtered_records:
+                        # Pega o field_map da tabela relacionada
+                        rel_instance = relation_manager.get_instance()
+                        rel_field_map = {}
+                        
+                        ignore = {
+                            'db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys', 
+                            'isUpdate', 'controller', 'select', 'insert', 'update', 'delete',
+                            'insert_recordset', 'update_recordset', 'delete_from', 'field',
+                            'exists', 'validate_fields', 'validate_write', 'clear', 'set_current',
+                            'get_table_columns', 'get_table_index', 'get_table_foreign_keys', 'get_table_total',
+                            'SelectForUpdate', 'get_columns_with_defaults', 'relations'
+                        }
+                        
+                        for attr, val in rel_instance.__dict__.items():
+                            if attr not in ignore and not attr.startswith('_') and not callable(val):
+                                rel_field_map[attr.upper()] = attr
+                        
+                        # LIMITA relations para não explodir o response!
+                        limited_records = filtered_records[:max_relations]
+                        record_dict[rel_name] = [
+                            self._serialize_simple(rec, rel_field_map) 
+                            for rec in limited_records
+                        ]
+                        
+                        # Indica se houve truncamento
+                        if len(filtered_records) > max_relations:
+                            record_dict[f"{rel_name}_truncated"] = True
+                            record_dict[f"{rel_name}_total"] = len(filtered_records)
         
-        return data
+        return record_dict
     
     def _serialize_simple(self, record_obj, field_map: Dict[str, str]) -> Dict:
         """Serializa um record simples sem processar relations recursivamente"""
