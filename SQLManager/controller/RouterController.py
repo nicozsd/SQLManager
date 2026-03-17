@@ -466,7 +466,7 @@ class AutoRouter:
             relation_names = self._get_relation_names(table)
             
             # Verifica se deve incluir relations (opt-in para performance)
-            include_relations = params.get('include_relations', '').lower() in ('true', '1', 'yes')
+            include_relations = params.get('relations', '').lower() in ('true', '1', 'yes')
 
             # Rota: GET /{table}/{id}
             if path_parts and path_parts[0].isdigit():                                
@@ -527,7 +527,7 @@ class AutoRouter:
         where_condition = None
         
         # Processa filtros (campo=valor, campo_gt=valor, etc)
-        if params and len(params) > 0 and any(k not in ('page', 'limit', 'include_relations', 'include_total') for k in params):
+        if params and len(params) > 0 and any(k not in ('page', 'limit', 'relations', 'include_total') for k in params):
             for key, value in params.items():
                 if key in ('page', 'limit', 'include_relations', 'include_total'):
                     continue

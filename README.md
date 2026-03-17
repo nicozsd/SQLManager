@@ -241,6 +241,7 @@ O **AutoRouter** é um sistema de rotas automáticas que transforma suas classes
 - **Validação Automática:** EDTs e Enums são validados antes de tocar no banco
 - **Filtros Avançados:** Suporte nativo a operadores (`_gt`, `_like`, `_lte`, etc.)
 - **Relations Automáticas:** Serializa automaticamente relations definidas nas tabelas (retorna JSON aninhado)
+>basta utilizar {URL}?relations=true em seu `GET`
 - **WebSocket Integrado:** Atualizações em tempo real automáticas para INSERT/UPDATE/DELETE
 - **Coleção Postman:** Geração automática de documentação para testes
 - **Decorator Robusto:** Usa `inspect.signature` para mapeamento type-safe de argumentos

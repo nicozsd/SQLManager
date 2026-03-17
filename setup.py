@@ -12,7 +12,7 @@ class CustomInstallCommand(install):
 
 setup(
     name="SQLManager",
-    version="4.1.1",
+    version="4.1.2",
     description="Sistema para gerenciamento de banco de dados e validações",
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
