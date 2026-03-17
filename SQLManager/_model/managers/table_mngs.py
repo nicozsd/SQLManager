@@ -156,6 +156,12 @@ class Table_Manager:
         with open(table_file, 'r', encoding='utf-8') as f:
             existing_content = f.read()
         
+        # Extrai e preserva imports customizados (ex: from .SubCategoryTable import SubCategoryTable)
+        custom_imports = []
+        import_pattern = r'^from\s+\.(\w+)\s+import\s+(.+)$'
+        for match in re.finditer(import_pattern, existing_content, re.MULTILINE):
+            custom_imports.append(match.group(0))
+        
         # Extrai e preserva bloco self.relations (se existir)
         relations_block = None
         relations_pattern = r'(self\.relations\s*=\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\})'
@@ -237,6 +243,13 @@ class Table_Manager:
         lines = []
         lines.append("from SQLManager import TableController, EDTController")
         lines.append("from model import EDTPack, EnumPack")
+        
+        # Adiciona imports customizados preservados
+        if custom_imports:
+            lines.append("")
+            for custom_import in custom_imports:
+                lines.append(custom_import)
+        
         lines.append("")
         lines.append(f"class {table_name}(TableController):")
         lines.append("    ")
@@ -249,7 +262,13 @@ class Table_Manager:
         lines.append(f"        super().__init__(db=db, source_name=\"{table_name}\")")
         lines.append("    ")
         
-        # Adiciona bloco self.relations preservado (se existir)
+        # Adiciona os campos PRIMEIRO (relations precisam dos campos já definidos)
+        for col in columns:
+            col_name = col[0].upper()
+            if col_name in new_fields:
+                lines.append(f"        self.{col_name} = {new_fields[col_name]}")
+        
+        # Adiciona bloco self.relations DEPOIS dos campos (usa self.RECID, etc)
         if relations_block:
             lines.append("")
             # Formata o bloco relations com indentação correta
@@ -257,11 +276,6 @@ class Table_Manager:
             for rel_line in relations_lines:
                 if rel_line.strip():
                     lines.append(f"        {rel_line.strip()}")
-        
-        for col in columns:
-            col_name = col[0].upper()
-            if col_name in new_fields:
-                lines.append(f"        self.{col_name} = {new_fields[col_name]}")
         
         lines.append("")
         
