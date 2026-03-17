@@ -814,9 +814,46 @@ class AutoRouter:
             for rel_name, relation_manager in self.current_table.relations.items():
                 # Pega os records da relation
                 if hasattr(relation_manager, 'records') and relation_manager.records:
-                    # Identifica os campos de relação (source_field e target_field)
-                    source_field_name = relation_manager._extract_field_name(relation_manager.source_field)
-                    target_field_name = relation_manager._extract_field_name(relation_manager.target_field)
+                    # Identifica os campos de relação - reverse lookup no field_map
+                    source_field_name = None
+                    source_field_obj = relation_manager.source_field
+                    
+                    # Se for string, usa direto
+                    if isinstance(source_field_obj, str):
+                        source_field_name = source_field_obj
+                    else:
+                        # Reverse lookup: procura qual atributo da tabela é esse EDT/Enum
+                        for attr_name in field_map.values():
+                            if hasattr(self.current_table, attr_name):
+                                if getattr(self.current_table, attr_name) is source_field_obj:
+                                    source_field_name = attr_name
+                                    break
+                    
+                    if not source_field_name:
+                        continue
+                    
+                    # Extrai target_field_name
+                    target_field_obj = relation_manager.target_field
+                    target_field_name = None
+                    
+                    if isinstance(target_field_obj, str):
+                        target_field_name = target_field_obj
+                    else:
+                        # Reverse lookup na tabela relacionada
+                        rel_instance = relation_manager.get_instance()
+                        for attr_name in dir(rel_instance):
+                            if attr_name.startswith('_') or attr_name in {'db', 'source_name', 'records'}:
+                                continue
+                            try:
+                                attr_val = getattr(rel_instance, attr_name)
+                                if attr_val is target_field_obj:
+                                    target_field_name = attr_name
+                                    break
+                            except:
+                                pass
+                    
+                    if not target_field_name:
+                        continue
                     
                     # Pega o valor do campo de relação no record atual
                     source_value = record_dict.get(source_field_name)
