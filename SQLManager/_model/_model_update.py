@@ -34,7 +34,7 @@ class ModelUpdater:
         """
         
         tables = self.db.doQuery(query)
-        db_tables = [row[0]["TABLE_NAME"] for row in tables]
+        db_tables = [row[0] for row in tables]
         if name not in db_tables:
             query = f"""
             CREATE TABLE {name} ({content})
