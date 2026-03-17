@@ -530,6 +530,10 @@ class SelectManager:
         results = []
                 
         join_records_by_controller = {i: [] for i in range(len(join_controllers))}
+        
+        # Para relations: deduplica registros principais baseado em RECID
+        seen_main_recids = set()
+        deduplicated_main_records = []
 
         for row in rows:
             idx = 0
@@ -538,7 +542,15 @@ class SelectManager:
             for col in table_columns:
                 main_data[col[0]] = row[idx]
                 idx += 1
-                        
+            
+            # Deduplicação para relations (baseado em RECID)
+            if self._include_relations:
+                main_recid = main_data.get('RECID')
+                if main_recid is not None:
+                    if main_recid not in seen_main_recids:
+                        seen_main_recids.add(main_recid)
+                        deduplicated_main_records.append(main_data)
+            
             row_data = [main_data]  
             
             for join_idx, (ctrl, alias) in enumerate(join_controllers):
@@ -553,6 +565,10 @@ class SelectManager:
                 join_records_by_controller[join_idx].append(join_data)
             
             results.append(row_data)
+        
+        # Se há relations, substitui results pelos registros deduplicados
+        if self._include_relations and deduplicated_main_records:
+            results = [[rec] for rec in deduplicated_main_records]
         
         # Retorna tanto os resultados quanto os registros separados
         return results, join_records_by_controller
