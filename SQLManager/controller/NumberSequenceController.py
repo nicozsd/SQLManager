@@ -219,32 +219,32 @@ class NumberSequenceController:
             - Sequência será deletada se exceder 20 caracteres de comprimento total
         """
         try:
-            self.Header.SEQUENCEID  = header["seqId"]
-            self.Header.NAMEALIAS   = header["name"]
-            self.Header.DESCRIPTION = header["desc"]
-            self.Header.ISDISABLE   = header["isdis"]
-            self.Header.MINNUM      = header["minnum"]
-            self.Header.MAXNUM      = header["maxnum"]
-            self.Header.PREVNUM     = header["minnum"] - 1
-            self.Header.CURNUM      = header["minnum"]
-            self.Header.NEXTNUM     = header["minnum"] + 1
+            self.Header.SEQUENCEID  = header["SEQUENCEID"]
+            self.Header.NAMEALIAS   = header["NAMEALIAS"]
+            self.Header.DESCRIPTION = header["DESCRIPTION"]
+            self.Header.ISDISABLE   = header["ISDISABLE"]
+            self.Header.MINNUM      = header["MINNUM"]
+            self.Header.MAXNUM      = header["MAXNUM"]
+            self.Header.PREVNUM     = header["MINNUM"] - 1
+            self.Header.CURNUM      = header["MINNUM"]
+            self.Header.NEXTNUM     = header["MINNUM"] + 1
             self.Header.insert()
             #self.Header.select().where(self.Header.SEQUENCEID == header["seqId"] and self.Header.NAMEALIAS == header["name"]).execute()
 
             for each in lines:
                 self.Lines.REFRECID  = self.Header.RECID.value
-                if each["pieceType"] == self.seqTypes.NUMERIC.value: #TODO: colocar o ENUM pra usar de alfaNum para poder arrumar o padding
-                    self.Lines.PIECETYPE = each["pieceType"]
+                if each["PIECETYPE"] == self.seqTypes.NUMERIC.value: #TODO: colocar o ENUM pra usar de alfaNum para poder arrumar o padding
+                    self.Lines.PIECETYPE = each["PIECETYPE"]
                     self.Lines.SEQPIECE  = None
-                    self.Lines.LINENUM   = each["place"]
+                    self.Lines.LINENUM   = each["LINENUM"]
                 else:
-                    self.Lines.PIECETYPE = each["pieceType"]
-                    self.Lines.SEQPIECE  = each["piece"]
-                    self.Lines.LINENUM   = each["place"]
+                    self.Lines.PIECETYPE = each["PIECETYPE"]
+                    self.Lines.SEQPIECE  = each["SEQPIECE"]
+                    self.Lines.LINENUM   = each["LINENUM"]
 
                 self.Lines.insert()
             self.Lines.select().where(self.Lines.REFRECID == self.Header.RECID.value).execute()
-            test = self.formatSequence(self.Lines.records, 1, len(str(header['maxnum'])))
+            test = self.formatSequence(self.Lines.records, 1, len(str(header['MAXNUM'])))
             if(len(test) > 20):
                 self.deleteNumberSequence(self.Header.RECID.value)
                 return{"status": False, "message": "Sequence exceeds character limit of 20"}
