@@ -459,7 +459,48 @@ class AutoRouter:
         if hasattr(table, 'relations') and table.relations:
             return list(table.relations.keys())
         return []
-        
+
+    def _fetch_relations_via_custom_select(self, table, parent_records: list):
+        if not hasattr(table, 'relations') or not table.relations:
+            return
+
+        parent_recids = []
+        for rec in parent_records:
+            recid = rec.get('RECID') if isinstance(rec, dict) else getattr(rec, 'RECID', None)
+            if hasattr(recid, 'value'):
+                recid = recid.value
+            if recid is not None:
+                parent_recids.append(recid)
+
+        if not parent_recids:
+            return
+
+        for rel_name, relation_manager in table.relations.items():
+            try:
+                child_instance = relation_manager.ref_table_class(self.db)
+
+                target_field = relation_manager.target_field
+                if isinstance(target_field, str):
+                    target_field_name = target_field
+                else:
+                    target_field_name = getattr(target_field, '_field_name', None) or getattr(target_field, 'field_name', None)
+
+                if not target_field_name:
+                    continue
+
+                child_field = child_instance.field(target_field_name)
+
+                if len(parent_recids) == 1:
+                    child_instance.select().where(child_field == parent_recids[0]).execute()
+                else:
+                    child_instance.select().where(child_field.in_(parent_recids)).execute()
+
+                relation_manager.set_records(child_instance.records)
+
+            except Exception as e:
+                print(f"[AutoRouter] Erro ao popular relation '{rel_name}': {e}")
+                traceback.print_exc()
+
     def _handle_get(self, table: Union[TableController, ViewController], path_parts: List[str], params: Dict, config: Dict):        
         try:
             field_map = self._get_field_map()
@@ -472,13 +513,9 @@ class AutoRouter:
             if path_parts and path_parts[0].isdigit():                                
                 recid = int(path_parts[0])
                 if table.exists(table.RECID == recid):
-                    select_query = table.select().where(table.RECID == recid)
-                    
-                    # Adiciona relations APENAS se requisitado
+                    table.select().where(table.RECID == recid).execute()
                     if include_relations and relation_names:
-                        select_query.with_relations(*relation_names)
-                    
-                    select_query.execute()
+                        self._fetch_relations_via_custom_select(table, table.records)                        
 
                     if table.records:
                         return {"status": 200, "data": self._serialize(table.records[0], field_map, include_relations=include_relations)}
@@ -506,10 +543,9 @@ class AutoRouter:
                             select_query.columns(cols)
                         
                         # Adiciona relations APENAS se requisitado
-                        if include_relations and relation_names:
-                            select_query.with_relations(*relation_names)
-                        
                         select_query.execute()
+                        if include_relations and relation_names:
+                            self._fetch_relations_via_custom_select(table, table.records)
 
                         data = [self._serialize(r, field_map, include_relations=include_relations) for r in table.records]
                         return {"status": 200, "data": data, "meta": {"count": len(data)}}                    
@@ -560,12 +596,9 @@ class AutoRouter:
         
         # USA O MÉTODO OTIMIZADO DO CONTROLLER (com cache de 60s)
         select_query = table.paginate(page=page, limit=limit, where=where_condition)
-        
-        # Relations APENAS se requisitado (performance!)
-        if include_relations and relation_names:
-            select_query = select_query.with_relations(*relation_names)
-        
         select_query.execute()
+        if include_relations and relation_names:
+            self._fetch_relations_via_custom_select(table, table.records)
         
         # Serializa resultados
         data = [self._serialize(r, field_map, include_relations=include_relations) for r in table.records]
