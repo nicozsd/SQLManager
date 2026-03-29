@@ -490,11 +490,15 @@ class AutoRouter:
 
                 child_field = child_instance.field(target_field_name)
 
+                # ← Sempre busca todos de uma vez com OR encadeado, evitando in_()
                 if len(parent_recids) == 1:
-                    child_instance.select().where(child_field == parent_recids[0]).execute()
+                    condition = (child_field == parent_recids[0])
                 else:
-                    child_instance.select().where(child_field.in_(parent_recids)).execute()
+                    condition = (child_field == parent_recids[0])
+                    for recid in parent_recids[1:]:
+                        condition = condition | (child_field == recid)
 
+                child_instance.select().where(condition).execute()
                 relation_manager.set_records(child_instance.records)
 
             except Exception as e:
