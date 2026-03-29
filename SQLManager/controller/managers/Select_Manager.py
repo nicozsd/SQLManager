@@ -243,6 +243,9 @@ class SelectManager:
     def execute(self):
         """Executa a query SELECT e atualiza a instância automaticamente - Retorna o controller"""
         if self._executed:
+            if hasattr(self._controller, '_enrich_records'):
+                self._controller._enrich_records()
+
             return self._controller
         
         self._executed = True
