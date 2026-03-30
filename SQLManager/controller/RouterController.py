@@ -758,40 +758,35 @@ class AutoRouter:
             return {"status": 400, "error": str(e)}
 
     def _handle_patch(self, table: TableController, recid: str, body: Dict):
-        if not recid.isdigit(): return {"status": 400, "error": "Invalid ID"}
+        if not recid.isdigit():
+            return {"status": 400, "error": "Invalid ID"}
         recid = int(recid)
-        
+
         if not table.exists(table.RECID == recid):
             return {"status": 404, "error": "Record not found"}
-        
+
         try:
             field_map = self._get_field_map()
-            valid_fields = {}
-            
+            # 1. Carrega o registro atual
+            table.select().where(table.RECID == recid).execute()
+            if not table.records:
+                return {"status": 404, "error": "Record not found"}
+            # 2. Atualiza os campos recebidos
             for key, value in body.items():
                 real_field_name = field_map.get(key.upper())
                 if real_field_name and real_field_name != 'RECID':
-                    # Valida o valor usando o setter do EDTController (lança erro se inválido)
                     setattr(table, real_field_name, value)
-                    valid_fields[real_field_name] = value
-            
-            if not valid_fields:
-                return {"status": 400, "error": "No valid fields provided for update"}
-            
-            affected = table.update_recordset(where=(table.RECID == recid), **valid_fields)
-            
-            if affected > 0:
+            # 3. Chama update customizado
+            updated = table.update()
+            if updated:
                 # Broadcast WebSocket (automático)
                 if self.ws_manager and self.ws_manager.enabled:
-                    # Busca dados atualizados
                     table.select().where(table.RECID == recid).execute()
                     if table.records:
                         data = self._serialize(table.records[0], field_map, include_relations=False)
                         self.ws_manager.broadcast_update(table.source_name, recid, data)
                     else:
-                        # Fallback: notificação simples
                         self.ws_manager.broadcast_update(table.source_name, recid)
-                
                 return {"status": 200, "message": "Updated successfully"}
             else:
                 return {"status": 304, "message": "No changes made"}
