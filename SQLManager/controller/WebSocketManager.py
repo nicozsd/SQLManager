@@ -33,21 +33,23 @@ except ImportError:
 class WebSocketManager:
     """Gerencia WebSocket para atualizações em tempo real do banco de dados"""
     
-    def __init__(self, app=None, socketio: Optional[SocketIO] = None):
+    def __init__(self, app=None, socketio: Optional[SocketIO] = None, enabled: bool = False):
         """
         Inicializa o WebSocket Manager.
         
         Args:
             app: Flask app instance
             socketio: SocketIO instance (se None, cria automaticamente)
+            enabled: Ativa WebSocket (DESABILITADO por padrão para performance)
         """
         self.app = app
-        self.enabled = SOCKETIO_AVAILABLE
+        # WebSocket DESABILITADO por padrão (opt-in para evitar overhead)
+        self.enabled = enabled and SOCKETIO_AVAILABLE
         
         if self.enabled:
             if socketio is None and app is not None:
                 # Cria SocketIO automaticamente
-                self.socketio = SocketIO(app, cors_allowed_origins="*")
+                self.socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
             else:
                 self.socketio = socketio
             

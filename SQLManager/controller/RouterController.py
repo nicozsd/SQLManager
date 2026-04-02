@@ -68,8 +68,9 @@ class AutoRouter:
         self._query_cache:     Dict[str, tuple]          = {}  # Cache de queries: {cache_key: (timestamp, data)}
         self._cache_ttl = 30  # TTL do cache em segundos
         
-        # WebSocket Manager (automático)
-        self.ws_manager = WebSocketManager(app, socketio) if app else None
+        # WebSocket Manager (DESABILITADO por padrão - use enable_websocket=True no config)
+        enable_ws = self.config.get('enable_websocket', False)
+        self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws) if app else None
         
         # Registra rotas Flask automaticamente se app foi fornecido
         if self.app and self.enabled:

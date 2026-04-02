@@ -22,12 +22,13 @@ class DatabaseWatcher:
         except ImportError:
             pass
 
-    def watch(self, table_name: str, interval: int = 5, query: str = None):
+    def watch(self, table_name: str, interval: int = 30, query: str = None):
+        """Monitora uma tabela (ATENÇÃO: polling consome recursos)"""
         self._tables[table_name] = {
-            'interval':   interval,
+            'interval':   max(interval, 10),  # Mínimo 10s para evitar overhead
             'last_hash':  None,
             'last_check': 0,
-            'query':      query or f"SELECT * FROM {table_name}"
+            'query':      query or f"SELECT TOP 100 * FROM {table_name} ORDER BY RECID DESC"  # Limita registros
         }
 
     def _get_hash(self, table_name: str, conn) -> str | None:
@@ -70,13 +71,17 @@ class DatabaseWatcher:
                 if current_hash != cfg['last_hash']:
                     cfg['last_hash'] = current_hash
                     print(f'[Watcher] Mudança detectada em {table_name}', flush=True)
-                    self.socketio.emit(
-                        'db_notification',
-                        {'action': 'external_change', 'table': table_name},
-                        room=table_name.upper()
-                    )
+                    try:
+                        self.socketio.emit(
+                            'db_notification',
+                            {'action': 'external_change', 'table': table_name},
+                            room=table_name.upper()
+                        )
+                    except Exception as e:
+                        print(f'[Watcher] Erro ao enviar notificação: {e}', flush=True)
 
-            time.sleep(1)  # com gevent patchado, isso cede o event loop
+            # Intervalo maior entre verificações para reduzir carga
+            time.sleep(5)
 
         if conn:
             self.db._return_connection(conn)

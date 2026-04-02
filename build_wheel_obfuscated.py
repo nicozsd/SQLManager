@@ -19,21 +19,24 @@ def main():
     dist_dir = base_dir / 'dist'
     build_dir = base_dir / 'build'
     
+    # Verifica variável de ambiente para desabilitar ofuscação
+    skip_obfuscate = os.getenv('OBFUSCATE_BUILD', '1') == '0'
+    
     print("="*60)
-    print("SQLManager - Build Wheel Ofuscado")
+    print("SQLManager - Build Wheel" + (" (SEM ofuscação)" if skip_obfuscate else " Ofuscado"))
     print("="*60)
     print()
     
     # 1. Limpar builds anteriores
-    print("[1/4] Limpando builds anteriores...")
-    for dir_to_clean in [dist_dir, build_dir]:
+    print("[1/3] Limpando builds anteriores...")
+    for dir_to_clean in [dist_dir, build_dir, base_dir / 'SQLManager.egg-info']:
         if dir_to_clean.exists():
             shutil.rmtree(dir_to_clean)
     
-    # 2. Criar wheel normal primeiro
-    print("\n[2/4] Criando wheel normal...")
+    # 2. Criar wheel
+    print("\n[2/3] Criando wheel...")
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "-w", "dist"],
+        [sys.executable, "-m", "build", "--wheel"],
         cwd=base_dir,
         capture_output=True,
         text=True
@@ -42,10 +45,11 @@ def main():
     if result.returncode != 0:
         print(f"[ERRO] Erro ao criar wheel:")
         print(result.stderr)
+        print("\n[DICA] Instale build: pip install build")
         return 1
     
     # 3. Encontrar o wheel gerado
-    print("\n[3/4] Localizando wheel gerado...")
+    print("\n[3/3] Localizando wheel gerado...")
     wheels = list(dist_dir.glob("*.whl"))
     if not wheels:
         print("[ERRO] Nenhum wheel encontrado em dist/")
@@ -54,41 +58,44 @@ def main():
     wheel_file = wheels[0]
     print(f"[OK] Encontrado: {wheel_file.name}")
     
-    # 4. Extrair, ofuscar e reempacotar
-    print("\n[4/4] Ofuscando wheel...")
-    
-    # Extrair wheel
-    import zipfile
-    extract_dir = build_dir / "wheel_extracted"
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    
-    with zipfile.ZipFile(wheel_file, 'r') as zip_ref:
-        zip_ref.extractall(extract_dir)
-    
-    # Ofuscar arquivos Python
-    sqlmanager_dir = extract_dir / "SQLManager"
-    if sqlmanager_dir.exists():
-        count = ofuscate_directory(sqlmanager_dir)
-        print(f"  [OK] {count} arquivos ofuscados")
-    
-    # Reempacotar wheel
-    wheel_file.unlink()  # Remove wheel original
-    
-    with zipfile.ZipFile(wheel_file, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
-        for root, dirs, files in os.walk(extract_dir):
-            for file in files:
-                file_path = Path(root) / file
-                arcname = file_path.relative_to(extract_dir)
-                zip_ref.write(file_path, arcname)
+    # 4. Ofuscação (OPCIONAL - desabilitado por padrão)
+    if not skip_obfuscate:
+        print("\n[EXTRA] Ofuscando wheel...")
+        try:
+            import zipfile
+            extract_dir = build_dir / "wheel_extracted"
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            
+            with zipfile.ZipFile(wheel_file, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            
+            sqlmanager_dir = extract_dir / "SQLManager"
+            if sqlmanager_dir.exists():
+                count = ofuscate_directory(sqlmanager_dir)
+                print(f"  [OK] {count} arquivos ofuscados")
+            
+            wheel_file.unlink()
+            
+            with zipfile.ZipFile(wheel_file, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+                for root, dirs, files in os.walk(extract_dir):
+                    for file in files:
+                        file_path = Path(root) / file
+                        arcname = file_path.relative_to(extract_dir)
+                        zip_ref.write(file_path, arcname)
+        except Exception as e:
+            print(f"  [AVISO] Erro na ofuscação: {e}")
+            print("  Criando wheel SEM ofuscação...")
     
     print()
     print("="*60)
-    print(f"[SUCESSO] Wheel ofuscado criado com sucesso!")
+    print(f"[SUCESSO] Wheel criado com sucesso!")
     print(f"Arquivo: {wheel_file}")
     print("="*60)
     print()
     print("Para instalar:")
     print(f"  pip install {wheel_file}")
+    print("  OU")
+    print(f"  pip install git+https://github.com/nicozsd/SQLManager.git")
     print()
     
     return 0

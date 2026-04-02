@@ -1,14 +1,6 @@
 # Setup para o Core como pacote instalável
 
 from setuptools import setup, find_packages
-from setuptools.command.install import install
-
-class CustomInstallCommand(install):
-    '''Hook pós-instalação'''
-    def run(self):
-        #install.run(self)     
-        pass                      
-
 
 setup(
     name="SQLManager",
@@ -19,7 +11,6 @@ setup(
     url="https://github.com/Avalon-Tecnologia/SQLManager",
     packages=find_packages(include=["SQLManager", "SQLManager.*"]),
     include_package_data=True,
-    #''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
     package_data={
         "SQLManager": [
             "_model/*.py",
@@ -29,16 +20,14 @@ setup(
             "views/*.py",
         ]
     },
-    #''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
     python_requires=">=3.8",
     install_requires=[
         "pyodbc>=4.0.0",
         "python-dotenv>=0.19.0",
-        
-        #''' [BEGIN CODE] Project: SQLManager Version 4.0 / made by: Nicolas Santos / created: 12/03/2026 '''
-        "flask-socketio>=5.0.0",  # Para WebSocketManager
-        #''' [END CODE] Project: SQLManager Version 4.0 / made by: Nicolas Santos / created: 12/03/2026 '''
     ],
+    extras_require={
+        'websocket': ['flask-socketio>=5.0.0'],  # WebSocket opcional
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -47,10 +36,8 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
-    cmdclass={
-        'install': CustomInstallCommand,
-    },
     license="MIT",
-    license_file="LICENSE",
 )
