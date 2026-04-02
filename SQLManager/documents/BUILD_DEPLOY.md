@@ -5,10 +5,11 @@ Este documento descreve como preparar e distribuir o SQLManager com código ofus
 ## Índice
 
 1. [Visão Geral](#visão-geral)
-2. [Build Ofuscado](#build-ofuscado)
-3. [Teste Local](#teste-local)
-4. [Publicação no GitHub](#publicação-no-github)
-5. [Desabilitação Temporária](#desabilitação-temporária)
+2. [Desenvolvimento Local](#desenvolvimento-local)
+3. [Build Ofuscado](#build-ofuscado)
+4. [Teste Local](#teste-local)
+5. [Publicação e Distribuição](#publicação-e-distribuição)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -17,106 +18,101 @@ Este documento descreve como preparar e distribuir o SQLManager com código ofus
 O SQLManager utiliza **ofuscação de bytecode** para proteger o código-fonte durante a distribuição. O processo funciona assim:
 
 1. **Desenvolvimento:** Código normal em `SQLManager/`
-2. **Build:** Script compila `.py` → `.pyc` (bytecode)
-3. **Distribuição:** Usuários recebem código ofuscado via `pip install`
+2. **Build:** Script compila `.py` -> `.pyc` (bytecode) e remove comentários
+3. **Distribuição:** Usuários instalam wheel ofuscado via `pip install`
 4. **Execução:** Python executa bytecode normalmente
 
 **Vantagens:**
-- ✅ Protege lógica de negócio
-- ✅ Dificulta engenharia reversa
-- ✅ Funciona sem dependências extras
-- ✅ Compatível com pip/virtualenv
+- Protege lógica de negócio
+- Dificulta engenharia reversa
+- Funciona sem dependências extras
+- Compatível com pip/virtualenv
 
 **Limitações:**
-- ⚠️ Não é criptografia (bytecode pode ser descompilado com ferramentas avançadas)
-- ⚠️ Performance idêntica ao código normal
-- ⚠️ Debug mais difícil para usuários finais
+- Não é criptografia (bytecode pode ser descompilado com ferramentas avançadas)
+- Performance idêntica ao código normal
+- Debug mais difícil para usuários finais
+
+---
+
+## Desenvolvimento Local
+
+Para desenvolver e testar mudanças:
+
+```bash
+# Modo editable - código aberto, mudanças refletidas imediatamente
+pip install -e .
+```
+
+Isso instala em modo "editable" - qualquer mudança no código é refletida imediatamente sem reinstalar.
+
+**Importante:** Modo editable NÃO ofusca o código (aponta diretamente para fonte original).
 
 ---
 
 ## Build Ofuscado
 
-### Método 1: Build Automático (setup.py)
+### Criar Wheel Ofuscado
 
-O setup.py já está configurado para ofuscar automaticamente durante o build.
+Use o script `build_wheel_obfuscated.py`:
 
-```powershell
-# 1. Ativar ambiente virtual
-.\.venv\Scripts\Activate.ps1
-
-# 2. Fazer build (ofusca automaticamente)
-python setup.py build
-
-# 3. Criar distribuição
-python setup.py sdist bdist_wheel
-
-# Build fica em:
-# dist/SQLManager-4.2.2.tar.gz         (código ofuscado)
-# dist/SQLManager-4.2.2-py3-none-any.whl
+```bash
+python build_wheel_obfuscated.py
 ```
 
-**Variável de controle:**
-```powershell
-# Desabilitar ofuscação temporariamente
-$env:OBFUSCATE_BUILD = "0"
-python setup.py build
+**O que o script faz:**
+1. Limpa builds anteriores (`dist/`, `build/`)
+2. Cria wheel normal usando `pip wheel`
+3. Extrai o wheel
+4. Ofusca código (remove comentários + compila bytecode)
+5. Reempacota wheel ofuscado
 
-# Reabilitar (padrão)
-$env:OBFUSCATE_BUILD = "1"
+**Saída:**
+```
+dist/sqlmanager-4.2.2-py3-none-any.whl  (ofuscado)
 ```
 
-### Método 2: Script Standalone
+### Estrutura do Wheel Ofuscado
 
-Use o script `build_obfuscated.py` para mais controle:
-
-```powershell
-# Executar build ofuscado
-python build_obfuscated.py
-
-# Resultado:
-# dist/SQLManager/  ← Código ofuscado
-# dist/setup.py
-# dist/README.md
 ```
-
-**Estrutura do build:**
-```
-dist/
+sqlmanager-4.2.2-py3-none-any.whl
 ├── SQLManager/
-│   ├── __init__.py          (mantido legível - imports)
-│   ├── CoreConfig.pyc       (bytecode ofuscado)
-│   ├── CoreConfig.py        (wrapper minificado)
+│   ├── __init__.py          (funcional)
+│   ├── CoreConfig.py        (sem comentários)
+│   ├── CoreConfig.pyc       (bytecode otimizado)
 │   ├── connection/
-│   │   ├── database_connection.pyc
-│   │   └── database_connection.py
+│   │   ├── database_connection.py
+│   │   └── database_connection.pyc
 │   └── controller/
-│       ├── TableController.pyc
-│       └── TableController.py
-├── setup.py
-└── README.md
+│       ├── TableController.py
+│       └── TableController.pyc
+└── SQLManager-4.2.2.dist-info/
 ```
 
 ---
 
 ## Teste Local
 
-Antes de publicar, teste o pacote ofuscado localmente:
+Antes de distribuir, teste o wheel ofuscado:
 
-```powershell
-# 1. Criar ambiente de teste limpo
+```bash
+# 1. Criar ambiente limpo
 python -m venv .venv_test
-.\.venv_test\Scripts\Activate.ps1
+.\.venv_test\Scripts\Activate.ps1  # Windows
+# source .venv_test/bin/activate   # Linux/Mac
 
-# 2. Instalar build ofuscado
-cd dist
-pip install -e .
+# 2. Instalar wheel ofuscado
+pip install dist/sqlmanager-4.2.2-py3-none-any.whl
 
 # 3. Testar importação
-python -c "from SQLManager import CoreConfig; print('✅ Importação OK')"
+python -c "from SQLManager import CoreConfig, AutoRouter; print('[OK] Importacao funcionando')"
 
-# 4. Testar funcionalidade básica
-python
+# 4. Verificar ofuscação
+python -c "import SQLManager; import os; f=os.path.join(os.path.dirname(SQLManager.__file__), 'CoreConfig.py'); print(open(f).readline())"
+# Deve mostrar: # SQLManager - Codigo Ofuscado v4.2.2
 ```
+
+### Teste Funcional Completo
 
 ```python
 from SQLManager import CoreConfig
@@ -128,150 +124,175 @@ CoreConfig.configure()
 # Testar conexão
 db = database_connection()
 db.connect()
-print("✅ Conexão OK")
+print("[OK] Conexao OK")
 
 # Testar query
 results = db.doQuery("SELECT 1 as test")
-print(f"✅ Query OK: {results}")
+print(f"[OK] Query OK: {results}")
 
 db.disconnect()
 ```
 
-**Verificar se está ofuscado:**
-
-```powershell
-# Abrir um arquivo .py qualquer (exceto __init__.py)
-cat dist\SQLManager\CoreConfig.py
-
-# Deve mostrar apenas:
-# # SQLManager - Código Ofuscado
-# # Avalon Tecnologia © 2026
-# exec(__import__('importlib.util').util...)
-```
-
 ---
 
-## Publicação no GitHub
+## Publicação e Distribuição
 
-### Pré-requisitos
+### Opção 1: GitHub Release (Recomendado)
 
-1. **SSH configurada** (veja README.md)
-2. **Repositório privado** (Avalon-Tecnologia/SQLManager)
-3. **Build testado** localmente
+```bash
+# 1. Criar wheel ofuscado
+python build_wheel_obfuscated.py
 
-### Workflow Completo
+# 2. Adicionar ao Git
+git add dist/sqlmanager-4.2.2-py3-none-any.whl
+git commit -m "Release v4.2.2 - Build ofuscado"
 
-```powershell
-# 1. Garantir que está na branch main
-git checkout main
-git pull origin main
-
-# 2. Fazer build ofuscado
-python setup.py build
-python setup.py sdist bdist_wheel
-
-# 3. Commitar código fonte (NÃO o build)
-git add SQLManager/ setup.py README.md
-git commit -m "v4.2.2 - Atualização com ofuscação automática"
-
-# 4. Tag da versão
+# 3. Tag de versão
 git tag v4.2.2
 git push origin main --tags
 
-# 5. Usuários instalam diretamente via SSH
-# pip install git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+# 4. Criar GitHub Release (manual na interface)
+# - Fazer upload do .whl em Assets
 ```
 
-**Importante:**
-- ✅ **Commite:** Código fonte original em `SQLManager/`
-- ❌ **Não commite:** Pasta `dist/`, `build/`, `.eggs/`
-- 📦 **Build acontece:** No `pip install` do usuário (setup.py faz ofuscação)
-
-### Como Funciona na Instalação
-
-Quando o usuário executa:
+**Usuários instalam:**
 ```bash
-pip install git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+# Via URL direta do release
+pip install https://github.com/Avalon-Tecnologia/SQLManager/releases/download/v4.2.2/sqlmanager-4.2.2-py3-none-any.whl
+
+# Ou baixar e instalar localmente
+pip install sqlmanager-4.2.2-py3-none-any.whl
 ```
 
-**O pip faz:**
-1. Clona o repositório
-2. Executa `python setup.py build` (ofusca código)
-3. Instala no `.venv` do usuário (código ofuscado)
-4. Executa `CustomInstallCommand` (gera modelos)
+### Opção 2: PyPI (Público ou Privado)
 
-**O usuário recebe:**
-- Código ofuscado em `.venv/Lib/site-packages/SQLManager/`
-- Documentação completa (README.md)
-- Funcionalidade 100% preservada
+```bash
+# Instalar twine
+pip install twine
+
+# Upload para PyPI
+twine upload dist/sqlmanager-4.2.2-py3-none-any.whl
+
+# Usuários instalam
+pip install SQLManager
+```
+
+### Opção 3: Servidor Privado/Compartilhado
+
+```bash
+# Copiar wheel para servidor interno
+scp dist/sqlmanager-4.2.2-py3-none-any.whl user@servidor:/shared/packages/
+
+# Usuários instalam
+pip install /shared/packages/sqlmanager-4.2.2-py3-none-any.whl
+```
 
 ---
 
-## Desabilitação Temporária
+## Workflow Completo de Release
 
-Para desenvolvedores autorizados que precisam do código legível:
-
-### Opção 1: Desabilitar via Variável
-
-```powershell
-# Durante desenvolvimento
-$env:OBFUSCATE_BUILD = "0"
+```bash
+# 1. Desenvolver com código aberto
 pip install -e .
 
-# Reinstalar sem ofuscação (modo editable)
-pip install --force-reinstall --no-deps -e .
+# 2. Testar mudanças
+python -m pytest
+python test_manual.py
+
+# 3. Atualizar versão
+# - Editar version="4.2.2" em setup.py
+# - Atualizar CHANGELOG.md
+
+# 4. Criar wheel ofuscado
+python build_wheel_obfuscated.py
+
+# 5. Testar wheel em ambiente limpo
+python -m venv .venv_test
+.\.venv_test\Scripts\Activate.ps1
+pip install dist/sqlmanager-4.2.2-py3-none-any.whl
+python -c "from SQLManager import AutoRouter; print('[OK] Funcionando')"
+deactivate
+
+# 6. Commit e tag
+git add dist/sqlmanager-4.2.2-py3-none-any.whl setup.py CHANGELOG.md
+git commit -m "Release v4.2.2"
+git tag v4.2.2
+git push origin main --tags
+
+# 7. Criar GitHub Release com o .whl
 ```
 
-### Opção 2: Branch Separada
+---
 
-```powershell
-# Criar branch de desenvolvimento
-git checkout -b dev-readable
+## Troubleshooting
 
-# Editar setup.py
-# Comentar linha: 'build_py': ObfuscatedBuildCommand
+### Build não gera wheel ofuscado
 
-# Desenvolver normalmente
-# NÃO fazer merge desta branch no main!
+**Sintoma:** `dist/` vazio ou wheel sem ofuscação
+
+**Solução:**
+```bash
+# Limpar totalmente
+Remove-Item dist, build -Recurse -Force -ErrorAction SilentlyContinue
+
+# Refazer build
+python build_wheel_obfuscated.py
 ```
 
-### Opção 3: Clone Direto (Apenas Desenvolvedores)
+### ImportError após instalar wheel
 
-```powershell
-# Clonar repositório
-git clone git@github.com:Avalon-Tecnologia/SQLManager.git
-cd SQLManager
+**Sintoma:** `ModuleNotFoundError: No module named 'SQLManager.xxx'`
 
-# Usar diretamente (sem instalar)
-$env:PYTHONPATH = "$PWD;$env:PYTHONPATH"
-python seu_projeto.py
+**Solução:**
+```bash
+# Verificar estrutura do wheel
+unzip -l dist/sqlmanager-4.2.2-py3-none-any.whl | grep SQLManager
+
+# Deve mostrar SQLManager/__init__.py, CoreConfig.py, etc.
 ```
+
+### Código não está ofuscado
+
+**Sintoma:** Arquivos .py com comentários completos
+
+**Solução:**
+```bash
+# Verificar primeira linha do arquivo instalado
+python -c "import SQLManager; print(open(SQLManager.__file__).readline())"
+
+# Deve mostrar: # SQLManager - Codigo Ofuscado v4.2.2
+```
+
+### Performance degradada
+
+**Nota:** Bytecode Python tem performance **idêntica** ao código fonte normal. Se houver diferença, verifique outros fatores (cache, network, etc).
 
 ---
 
 ## Controle de Acesso
 
-### Gerenciar Permissões (GitHub)
+### Repositório GitHub (Privado)
 
 ```
-Repositório → Settings → Manage Access
+Settings -> Manage Access:
 
-✅ Desenvolvedores: Write (podem ver código-fonte)
-✅ Clientes: Read (instalam via pip, recebem ofuscado)
-❌ Público: Sem acesso (repositório privado)
+- Desenvolvedores Avalon: Admin (acesso a código-fonte)
+- Parceiros: Read (baixam releases, recebem .whl ofuscado)
+- Público: Sem acesso
 ```
 
-### Auditoria de Instalações
+### Acesso ao Código Fonte
 
-```powershell
-# Adicionar logging no setup.py (opcional)
-class CustomInstallCommand(install):
-    def run(self):
-        import socket
-        import datetime
-        log_msg = f"{datetime.datetime.now()} - {socket.gethostname()}"
-        # Enviar para analytics/logging interno
-        install.run(self)
+Apenas para desenvolvedores autorizados:
+
+```bash
+# Clone com acesso SSH
+git clone git@github.com:Avalon-Tecnologia/SQLManager.git
+cd SQLManager
+
+# Desenvolver diretamente (sem instalar)
+$env:PYTHONPATH = "$PWD;$env:PYTHONPATH"
+python seu_projeto.py
 ```
 
 ---
@@ -280,68 +301,23 @@ class CustomInstallCommand(install):
 
 - [ ] Código testado e funcionando
 - [ ] Versão atualizada em `setup.py`
-- [ ] README.md atualizado
-- [ ] Build local testado (`python setup.py build`)
-- [ ] Ofuscação verificada (`cat build/lib/SQLManager/CoreConfig.py`)
-- [ ] Testes passando
+- [ ] CHANGELOG.md atualizado
+- [ ] Build ofuscado criado (`python build_wheel_obfuscated.py`)
+- [ ] Ofuscação verificada (primeira linha com header)
+- [ ] Teste em ambiente limpo (venv separado)
+- [ ] Testes automatizados passando
 - [ ] Git commit + tag (`git tag v4.2.2`)
-- [ ] Push para main (`git push origin main --tags`)
-- [ ] Testar instalação via SSH em ambiente limpo
+- [ ] Push para GitHub (`git push origin main --tags`)
+- [ ] GitHub Release criado com .whl em Assets
 - [ ] Documentar breaking changes (se houver)
-
----
-
-## Troubleshooting
-
-### Build não ofusca
-
-**Sintoma:** Código legível em `build/lib/`
-
-**Solução:**
-```powershell
-# Verificar variável
-echo $env:OBFUSCATE_BUILD  # Deve ser "1" ou vazio
-
-# Forçar rebuild
-rm -r build/ dist/
-python setup.py build
-```
-
-### ImportError após ofuscação
-
-**Sintoma:** `ModuleNotFoundError: No module named 'SQLManager.xxx'`
-
-**Solução:**
-```powershell
-# Verificar __init__.py não foi ofuscado
-cat build/lib/SQLManager/__init__.py
-# Deve estar legível
-
-# Se estiver ofuscado, corrigir build_obfuscated.py:
-# Linha 57: if file.endswith('.py') and file != '__init__.py':
-```
-
-### Performance degradada
-
-**Sintoma:** Código mais lento após ofuscação
-
-**Diagnóstico:**
-```python
-import timeit
-
-# Testar função
-timeit.timeit('CoreConfig.configure()', setup='from SQLManager import CoreConfig', number=1000)
-```
-
-**Nota:** Bytecode Python tem performance **idêntica** ao código normal. Se houver diferença, o problema é outro.
 
 ---
 
 ## Recursos Adicionais
 
 - [Python Bytecode - Docs Oficiais](https://docs.python.org/3/library/py_compile.html)
-- [GitHub SSH - Setup](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
-- [pip install from Git](https://pip.pypa.io/en/stable/topics/vcs-support/)
+- [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github)
+- [pip wheel](https://pip.pypa.io/en/stable/cli/pip_wheel/)
 
 ---
 
