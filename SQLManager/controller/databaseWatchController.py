@@ -9,9 +9,39 @@ class DatabaseWatcher:
         self.socketio = socketio
         self._tables  = {}
         self._running = False
-        self._greenlet = None  # era self._thread
+        self._thread  = None
+        
+        # Detecta se gevent está ativo (monkey patched)
+        self._use_gevent = False
+        try:
+            import gevent
+            # Se threading.Thread foi patchado por gevent, use gevent.spawn
+            if hasattr(threading, '_gevent_monkey_patched'):
+                self._use_gevent = True
+                self._gevent = gevent
+        except ImportError:
+            pass
 
-    # ... watch() e _get_hash() sem mudança ...
+    def watch(self, table_name: str, interval: int = 5, query: str = None):
+        self._tables[table_name] = {
+            'interval':   interval,
+            'last_hash':  None,
+            'last_check': 0,
+            'query':      query or f"SELECT * FROM {table_name}"
+        }
+
+    def _get_hash(self, table_name: str, conn) -> str | None:
+        cfg = self._tables[table_name]
+        try:
+            cursor = conn.cursor()
+            cursor.execute(cfg['query'])
+            rows = cursor.fetchall()
+            cursor.close()
+            content = json.dumps([list(r) for r in rows], default=str)
+            return hashlib.md5(content.encode()).hexdigest()
+        except Exception as e:
+            print(f'[Watcher] Erro ao verificar {table_name}: {e}', flush=True)
+            return None
 
     def _loop(self):
         time.sleep(0.5)
