@@ -6,7 +6,8 @@ from setuptools.command.install import install
 class CustomInstallCommand(install):
     '''Hook pós-instalação'''
     def run(self):
-        install.run(self)                           
+        #install.run(self)     
+        pass                      
 
 
 setup(
