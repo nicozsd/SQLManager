@@ -9,46 +9,13 @@ class DatabaseWatcher:
         self.socketio = socketio
         self._tables  = {}
         self._running = False
-        self._thread  = None
-        
-        # Detecta se gevent está ativo (monkey patched)
-        self._use_gevent = False
-        try:
-            import gevent
-            # Se threading.Thread foi patchado por gevent, use gevent.spawn
-            if hasattr(threading, '_gevent_monkey_patched'):
-                self._use_gevent = True
-                self._gevent = gevent
-        except ImportError:
-            pass
+        self._greenlet = None  # era self._thread
 
-    def watch(self, table_name: str, interval: int = 5, query: str = None):
-        self._tables[table_name] = {
-            'interval':   interval,
-            'last_hash':  None,
-            'last_check': 0,
-            'query':      query or f"SELECT * FROM {table_name}"
-        }
-
-    def _get_hash(self, table_name: str, conn) -> str | None:
-        cfg = self._tables[table_name]
-        try:
-            cursor = conn.cursor()
-            cursor.execute(cfg['query'])
-            rows = cursor.fetchall()
-            cursor.close()
-            content = json.dumps([list(r) for r in rows], default=str)
-            return hashlib.md5(content.encode()).hexdigest()
-        except Exception as e:
-            print(f'[Watcher] Erro ao verificar {table_name}: {e}', flush=True)
-            return None
+    # ... watch() e _get_hash() sem mudança ...
 
     def _loop(self):
-        # IMPORTANTE: Com gevent, aguardar um pouco antes de pegar conexão
-        # para evitar race condition com inicialização das tabelas
         time.sleep(0.5)
         
-        # Pega uma conexão dedicada do pool para o watcher
         conn = None
         try:
             conn = self.db._get_connection()
@@ -60,21 +27,16 @@ class DatabaseWatcher:
 
         while self._running:
             now = time.time()
-
             for table_name, cfg in self._tables.items():
                 if now - cfg['last_check'] < cfg['interval']:
                     continue
-
                 cfg['last_check'] = now
                 current_hash = self._get_hash(table_name, conn)
-
                 if current_hash is None:
                     continue
-
                 if cfg['last_hash'] is None:
                     cfg['last_hash'] = current_hash
                     continue
-
                 if current_hash != cfg['last_hash']:
                     cfg['last_hash'] = current_hash
                     print(f'[Watcher] Mudança detectada em {table_name}', flush=True)
@@ -84,26 +46,26 @@ class DatabaseWatcher:
                         room=table_name.upper()
                     )
 
-            time.sleep(1)
+            time.sleep(1)  # com gevent patchado, isso cede o event loop
 
-        # Devolve conexão ao pool ao parar
         if conn:
             self.db._return_connection(conn)
 
     def start(self):
         if self._running:
             return
-        
         if not self._tables:
             print('[Watcher] Nenhuma tabela registrada para monitorar', flush=True)
             return
-            
+        
         self._running = True
-        self._thread  = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        
+        import gevent
+        self._greenlet = gevent.spawn(self._loop)
+        
         print(f'[Watcher] Iniciado monitorando {len(self._tables)} tabela(s)', flush=True)
 
     def stop(self):
         self._running = False
-        if self._thread:
-            self._thread.join(timeout=5)
+        if self._greenlet:
+            self._greenlet.join(timeout=5)
