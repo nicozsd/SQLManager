@@ -502,13 +502,8 @@ class AutoRouter:
 
                 # ← Filtra a filha pelo campo TARGET com os valores coletados
                 child_field = child_instance.field(target_field_name)
-
-                if len(parent_values) == 1:
-                    condition = (child_field == parent_values[0])
-                else:
-                    condition = (child_field == parent_values[0])
-                    for val in parent_values[1:]:
-                        condition = condition | (child_field == val)
+                
+                condition = child_field.in_(parent_values)
 
                 child_instance.select().where(condition).execute()
                 relation_manager.set_records(child_instance.records)

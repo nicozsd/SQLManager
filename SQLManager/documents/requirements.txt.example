@@ -1,0 +1,24 @@
+# Requirements para projeto usando SQLManager
+# Repositório privado - requer SSH configurado
+
+# SQLManager - Core (via SSH)
+git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+
+# Ou especificar versão/branch:
+# git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@v4.2.2
+# git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@main
+# git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@develop
+
+# Dependências do SQLManager (instaladas automaticamente):
+# - pyodbc>=4.0.0
+# - python-dotenv>=0.19.0
+# - flask-socketio>=5.0.0
+
+# Dependências do seu projeto (exemplos)
+flask>=2.0.0
+flask-cors>=3.0.0
+
+# Ambiente de desenvolvimento (opcional)
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=4.0.0

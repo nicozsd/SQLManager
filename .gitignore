@@ -6,6 +6,16 @@ __pycache__/
 .env
 .vscode/
 
+# SQLManager - Build Ofuscado (NÃO commitar)
+build/
+dist/
+*.egg-info/
+.eggs/
+*.pyc
+*.pyo
+.venv_test/
+obfuscated_build/
+
 # C extensions
 *.so
 

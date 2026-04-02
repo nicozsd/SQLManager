@@ -2,6 +2,16 @@
 
 Sistema reutilizável para gerenciamento de conexões de banco de dados, validações de dados (EDTs e BaseEnums) e controle de tabelas e views.
 
+> **Repositório Privado** - Requer autenticação SSH  
+> **[Início Rápido](SQLManager/documents/QUICKSTART.md)** | **[Configurar SSH](SQLManager/documents/SSH_SETUP.md)** | **[Build/Deploy](SQLManager/documents/BUILD_DEPLOY.md)**
+
+---
+
+**Arquivos de exemplo:**
+- [requirements.txt.example](requirements.txt.example) - Template para seu projeto
+
+---
+
 ## Sumário
 - [Características](#características)
 - [Instalação](#instalação)
@@ -32,47 +42,145 @@ Sistema reutilizável para gerenciamento de conexões de banco de dados, valida�
 - **Model Generator:** Sistema automático de geração de modelos baseado no banco de dados
 - **AutoRouter:** Geração automática de endpoints RESTful para CRUD
 - **Relations System:** Relacionamentos automáticos entre tabelas com auto-população via JOIN ([Issue #5](https://github.com/nickzsd/SQLManager/issues/5))
-- **WebSocket Integrado:** Atualizações em tempo real automáticas para todas operações CRUD ([Issue #7](https://github.com/nicozsd/SQLManager/issues/7))
+- **WebSocket Integrado:** Atualizações em tempo real automáticas para todas operações CRUD ([Issue #7](https://github.com/Avalon-Tecnologia/SQLManager/issues/7))
+- **Código Protegido:** Distribuição com ofuscação automática de bytecode (proteção IP)
+- **Repositório Privado:** Acesso controlado via SSH para segurança empresarial
 - Suporte a Tables e Views: Controllers para tabelas (CRUD completo) e views (leitura)
 
 ---
 
 ## Instalação
 
-### Como Repositório Externo
+### Pré-requisitos
 
-```bash
-pip install git+https://github.com/nicozsd/SQLManager.git
+- Python 3.8 ou superior
+- Git instalado
+- Chave SSH configurada no GitHub (repositório privado)
 
-# Ou adicione ao requirements.txt
-git+https://github.com/nicozsd/SQLManager.git
+---
+
+### 1. Configuração da Chave SSH (Primeira vez)
+
+Este repositório é **privado** e requer autenticação SSH. Siga os passos abaixo:
+
+#### Windows (PowerShell)
+
+```powershell
+# 1. Gerar chave SSH (se não tiver)
+ssh-keygen -t ed25519 -C "seu-email@exemplo.com"
+# Pressione Enter 3 vezes (aceita local padrão e sem senha)
+
+# 2. Copiar chave pública
+Get-Content ~\.ssh\id_ed25519.pub | Set-Clipboard
+# Ou visualize com: cat ~/.ssh/id_ed25519.pub
 ```
 
+#### Linux/Mac (Bash)
+
+```bash
+# 1. Gerar chave SSH (se não tiver)
+ssh-keygen -t ed25519 -C "seu-email@exemplo.com"
+
+# 2. Copiar chave pública
+cat ~/.ssh/id_ed25519.pub | pbcopy  # Mac
+# ou
+cat ~/.ssh/id_ed25519.pub | xclip   # Linux
+```
+
+#### Adicionar no GitHub
+
+1. Acesse: [GitHub SSH Settings](https://github.com/settings/keys)
+2. Clique em **"New SSH key"**
+3. Cole a chave pública copiada
+4. Salve
+
+#### Testar Conexão
+
+```bash
+ssh -T git@github.com
+# Deve retornar: "Hi username! You've successfully authenticated..."
+```
+
+---
+
+### 2. Instalação do Pacote
+
+#### Opção A: Instalação Direta (Ambiente Virtual)
+
+```bash
+# 1. Criar ambiente virtual (recomendado)
+python -m venv .venv
+
+# 2. Ativar ambiente
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+# Linux/Mac:
+source .venv/bin/activate
+
+# 3. Instalar SQLManager via SSH
+pip install git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+```
+
+#### Opção B: Via requirements.txt (Recomendado para Projetos)
+
+Crie ou edite o arquivo `requirements.txt`:
+
+```txt
+# requirements.txt
+git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+```
+
+Depois instale:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 3. Configuração Inicial (Obrigatório)
+
 > **ATENÇÃO:** O `pip install` executa automaticamente o gerador de modelos durante a instalação. Certifique-se de que:
-> - Seu arquivo `.env` está configurado com as credenciais do banco de dados (variáveis: `DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`)
+> - Seu arquivo `.env` está configurado com as credenciais do banco de dados
 > - A pasta `src/` existe na raiz do seu projeto
-> - Todas as tabelas e views e views no banco possuem o campo `RECID` (tipo BIGINT)
->
-> **Exemplo do arquivo `.env`:**
-> ```env
-> DB_SERVER=localhost
-> DB_DATABASE=MeuBanco
-> DB_USER=admin
-> DB_PASSWORD=senha123
-> DB_DRIVER="DRIVER"
-> ```
-> **Se não houver `.env`**  
-> Utilizar os parametros diretamento no comando CMD/Powershell
->**Parametros:**  
->- `--server`: Servidor do banco de dados.
-> - `--database`: Banco de dados.
-> - `---user`: Usuário do banco de dados.
-> - `--password`: Senha do banco de dados.
-> - `--driver`: Driver ODBC para SQL Server (ex: 'ODBC Driver 17 for SQL Server').
->```Powershell
-> python -m SQLManager._model._model_update --server xxx --database xxx --user xxx --password xxx
->``` 
-> NOTA: O SQLManager será instalado no ambiente virtual (.venv) do seu projeto, não na pasta src/.
+> - Todas as tabelas/views no banco possuem o campo `RECID` (tipo BIGINT)
+
+#### Exemplo do arquivo `.env`:
+
+```env
+DB_SERVER=localhost
+DB_DATABASE=MeuBanco
+DB_USER=admin
+DB_PASSWORD=senha123
+DB_DRIVER=ODBC Driver 17 for SQL Server
+```
+
+#### Se não houver `.env`, use parâmetros diretos:
+
+```powershell
+python -m SQLManager._model._model_update --server localhost --database MeuBanco --user admin --password senha123
+```
+
+**Parâmetros disponíveis:**
+- `--server`: Servidor do banco de dados
+- `--database`: Nome do banco de dados
+- `--user`: Usuário do banco
+- `--password`: Senha do banco
+- `--driver`: Driver ODBC (padrão: 'ODBC Driver 17 for SQL Server')
+
+---
+
+### 4. Atualizar para Versão Mais Recente
+
+```bash
+# Atualizar para a versão mais recente
+pip install --upgrade --force-reinstall git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+
+# Ou especifique uma branch/tag
+pip install --upgrade git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@develop
+```
+
+> 💡 **NOTA:** O SQLManager será instalado no ambiente virtual (`.venv`) do seu projeto, **não na pasta `src/`**.
 
 
 ## Passo Obrigatório: Gerar os Modelos
@@ -98,7 +206,9 @@ Esse comando irá criar (ou atualizar) automaticamente as seguintes pastas e arq
 > - O gerador sincroniza os campos das tabelas e views e views do banco com os arquivos Python.
 > - Não edite manualmente arquivos gerados, exceto para customizações documentadas.
 
-## Importação do Pacote
+---
+
+### 5. Importação do Pacote
 
 Após instalar, use:
 
@@ -106,37 +216,68 @@ Após instalar, use:
 from SQLManager import connection, controller, CoreConfig
 # ou
 from SQLManager.connection import database_connection
-from SQLManager.controller import EDTController, TableController, ViewController, TableController, ViewController
-```
-
-## Atualizando o SQLManager
-
-Para atualizar para a versão mais recente, execute:
-
-```bash
-pip install --upgrade --force-reinstall git+https://github.com/nicozsd/SQLManager.git
+from SQLManager.controller import EDTController, TableController, ViewController
 ```
 
 ---
+
+### 6. Verificar Instalação
+
+```powershell
+# Verificar se está instalado
+pip show SQLManager
+
+# Verificar versão importando
+python -c "import SQLManager; print(SQLManager.__version__ if hasattr(SQLManager, '__version__') else 'Instalado')"
+```
+
+---
+
+### Troubleshooting - Instalação
+
+#### Erro: "Permission denied (publickey)"
+
+Sua chave SSH não está configurada. Refaça o [passo 1](#1-configuração-da-chave-ssh-primeira-vez).
+
+#### Erro: "Repository not found"
+
+Você não tem acesso ao repositório privado. Entre em contato com o administrador.
+
+#### Erro: "Failed building wheel for SQLManager"
+
+Verifique se o Python e pip estão atualizados:
+
+```bash
+python --version  # Deve ser 3.8+
+pip install --upgrade pip setuptools wheel
+```
+
+#### Instalação não gera modelos
+
+Execute manualmente:
+
+```bash
+python -m SQLManager._model._model_update
+```
 
 ## Patch Notes
 
 ### Issues 
 
 #### Remodelagem do tableController
-> Issue: [#1-TableController Remodel](https://github.com/nicozsd/SQLManager/issues/1)  
+> Issue: [#1-TableController Remodel](https://github.com/Avalon-Tecnologia/SQLManager/issues/1)  
 > Solution [Development document](SQLManager/documents/Issues/Issue1_Note.md)
 
-> Issue: [#3-AutoRoutes](https://github.com/nicozsd/SQLManager/issues/3)  
+> Issue: [#3-AutoRoutes](https://github.com/Avalon-Tecnologia/SQLManager/issues/3)  
 > Solution [Development document](SQLManager/documents/Issues/Issue3_Note.md)
 
-> Issue: [#4-ViewController](https://github.com/nicozsd/SQLManager/issues/4)  
+> Issue: [#4-ViewController](https://github.com/Avalon-Tecnologia/SQLManager/issues/4)  
 > Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
 
 > Issue: [#5-Relation System](https://github.com/nickzsd/SQLManager/issues/5)  
 > Solution [Development document](SQLManager/documents/Issues/Issue5_Note.md)
 
-> Issue: [#6-UpdateModel](https://github.com/nicozsd/SQLManager/issues/6)  
+> Issue: [#6-UpdateModel](https://github.com/Avalon-Tecnologia/SQLManager/issues/6)  
 > Solution [Development document](SQLManager/documents/Issues/Issue6_Note.md)
 
 ### Versão 4.0.0 (27/02/2026)
@@ -1161,7 +1302,7 @@ products_view.select()\
 MeuProjeto/
 │
 ├── .env                   # Suas variáveis de ambiente
-├── requirements.txt       # git+https://github.com/nicozsd/SQLManager
+├── requirements.txt       # git+https://github.com/Avalon-Tecnologia/SQLManager
 ├── app.py                 # Configurar CoreConfig aqui
 │
 ├── src/
