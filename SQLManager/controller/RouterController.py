@@ -715,7 +715,9 @@ class AutoRouter:
                           field_map: Dict[str, str], include_relations: bool) -> Dict[str, Any]:
         """
         Retorna dados em BATCHES para tabelas com grandes volumes.
-        Rota: GET /{table}?mode=batch&batch_size=1000&max_batches=10
+        Rota: GET /{table}?mode=batch&batch_size=1000
+        
+        **IMPORTANTE:** Se max_batches NÃO for especificado, retorna TODOS os batches (limite 100 por request).
         
         Retorna formato estruturado:
         {
@@ -745,14 +747,17 @@ class AutoRouter:
         try:
             # Parâmetros de batch
             batch_size = int(params.get('batch_size', 1000))
-            max_batches = int(params.get('max_batches', 10))  # Limite de batches por requisição
+            # Se max_batches não especificado, usa 0 (= trazer TODOS os batches)
+            max_batches_param = params.get('max_batches', '0')
+            max_batches = int(max_batches_param) if max_batches_param else 0
             start_batch = int(params.get('start_batch', 1))  # Qual batch começar (paginação de batches)
             
             # Validações
             if batch_size < 1 or batch_size > 5000:
                 return {"status": 400, "error": "batch_size deve estar entre 1 e 5000"}
-            if max_batches < 1 or max_batches > 50:
-                return {"status": 400, "error": "max_batches deve estar entre 1 e 50"}
+            # max_batches=0 significa "todos", mas se especificado deve estar no range válido
+            if max_batches < 0 or max_batches > 100:
+                return {"status": 400, "error": "max_batches deve estar entre 0 (todos) e 100"}
             
         except ValueError:
             return {"status": 400, "error": "Parâmetros batch inválidos"}
@@ -802,7 +807,17 @@ class AutoRouter:
         
         # Calcula batches
         total_batches_available = (total_records + batch_size - 1) // batch_size  # Arredonda para cima
-        batches_to_fetch = min(max_batches, total_batches_available - start_batch + 1)
+        
+        # Se max_batches=0, traz TODOS os batches (com limite de segurança de 100)
+        if max_batches == 0:
+            # Calcula quantos batches faltam desde start_batch
+            remaining_batches = total_batches_available - start_batch + 1
+            # Aplica limite de segurança para evitar requests muito grandes
+            max_batches_to_use = min(remaining_batches, 100)
+        else:
+            max_batches_to_use = max_batches
+        
+        batches_to_fetch = min(max_batches_to_use, total_batches_available - start_batch + 1)
         
         if batches_to_fetch <= 0:
             return {"status": 400, "error": f"start_batch {start_batch} excede total de batches disponíveis ({total_batches_available})"}
@@ -851,7 +866,8 @@ class AutoRouter:
                 "total_records": total_records,
                 "current_batch_range": f"{start_batch}-{start_batch + len(batches_data) - 1}",
                 "has_more": has_more,
-                "next_batch": start_batch + batches_to_fetch if has_more else None
+                "next_batch": start_batch + batches_to_fetch if has_more else None,
+                "fetch_all_mode": max_batches == 0  # True se está trazendo todos os batches
             }
         }
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 08/04/2026 '''
