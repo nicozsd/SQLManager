@@ -461,8 +461,22 @@ class AutoRouter:
             return list(table.relations.keys())
         return []
 
-    def _fetch_relations_via_custom_select(self, table, parent_records: list):
+    def _fetch_relations_via_custom_select(self, table, parent_records: list, recursive: bool = False, max_depth: int = 3, current_depth: int = 0):
+        """
+        Busca relations de forma otimizada com suporte a aninhamento recursivo.
+        
+        Args:
+            table: Tabela/View controller
+            parent_records: Lista de records pais
+            recursive: Se True, busca relations das relations (aninhamento)
+            max_depth: Profundidade máxima de recursão (evita loops infinitos)
+            current_depth: Profundidade atual (controle interno)
+        """
         if not hasattr(table, 'relations') or not table.relations:
+            return
+        
+        # Proteção contra recursão infinita
+        if current_depth >= max_depth:
             return
 
         for rel_name, relation_manager in table.relations.items():
@@ -517,6 +531,16 @@ class AutoRouter:
 
                 # Define todos os registros filhos de uma vez
                 relation_manager.set_records(all_child_records)
+                
+                # ← RECURSÃO: Se habilitado, busca relations dos filhos também
+                if recursive and all_child_records and hasattr(child_instance, 'relations') and child_instance.relations:
+                    self._fetch_relations_via_custom_select(
+                        child_instance, 
+                        all_child_records, 
+                        recursive=True, 
+                        max_depth=max_depth,
+                        current_depth=current_depth + 1
+                    )
 
             except Exception as e:
                 print(f"[AutoRouter] Erro ao popular relation '{rel_name}': {e}")
@@ -529,6 +553,11 @@ class AutoRouter:
             
             # Verifica se deve incluir relations (opt-in para performance)
             include_relations = params.get('relations', '').lower() in ('true', '1', 'yes')
+            
+            # ← NOVO: Modo BATCH para grandes volumes de dados
+            mode = params.get('mode', '').lower()
+            if mode == 'batch' and not path_parts:
+                return self._handle_get_batch(table, params, config, field_map, include_relations)
 
             # Rota: GET /{table}/{id}
             if path_parts and path_parts[0].isdigit():                                
@@ -536,10 +565,11 @@ class AutoRouter:
                 if table.exists(table.RECID == recid):
                     table.select().where(table.RECID == recid).execute()
                     if include_relations and relation_names:
-                        self._fetch_relations_via_custom_select(table, table.records)                        
+                        # Relations recursivas quando relations=true
+                        self._fetch_relations_via_custom_select(table, table.records, recursive=True, max_depth=3)                        
 
                     if table.records:
-                        return {"status": 200, "data": self._serialize(table.records[0], field_map, include_relations=include_relations)}
+                        return {"status": 200, "data": self._serialize(table.records[0], field_map, include_relations=include_relations, recursive_relations=True)}
                         
                 return {"status": 404, "error": "Record not found"}
             
@@ -566,9 +596,10 @@ class AutoRouter:
                         # Adiciona relations APENAS se requisitado
                         select_query.execute()
                         if include_relations and relation_names:
-                            self._fetch_relations_via_custom_select(table, table.records)
+                            # Relations recursivas quando relations=true
+                            self._fetch_relations_via_custom_select(table, table.records, recursive=True, max_depth=3)
 
-                        data = [self._serialize(r, field_map, include_relations=include_relations) for r in table.records]
+                        data = [self._serialize(r, field_map, include_relations=include_relations, recursive_relations=True) for r in table.records]
                         return {"status": 200, "data": data, "meta": {"count": len(data)}}                    
                     except Exception as e:
                         return {"status": 500, "error": f"Custom route error: {str(e)}"}
@@ -619,10 +650,11 @@ class AutoRouter:
         select_query = table.paginate(page=page, limit=limit, where=where_condition)
         select_query.execute()
         if include_relations and relation_names:
-            self._fetch_relations_via_custom_select(table, table.records)
+            # Relations recursivas quando relations=true
+            self._fetch_relations_via_custom_select(table, table.records, recursive=True, max_depth=3)
         
         # Serializa resultados
-        data = [self._serialize(r, field_map, include_relations=include_relations) for r in table.records]
+        data = [self._serialize(r, field_map, include_relations=include_relations, recursive_relations=True) for r in table.records]
         
         # Total é DESABILITADO por padrão (performance em tabelas grandes!)
         # Use ?include_total=true se precisar do count total
@@ -639,6 +671,152 @@ class AutoRouter:
             "meta": meta
         }
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+    
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 08/04/2026 '''
+    def _handle_get_batch(self, table: Union[TableController, ViewController], params: Dict, config: Dict, 
+                          field_map: Dict[str, str], include_relations: bool) -> Dict[str, Any]:
+        """
+        Retorna dados em BATCHES para tabelas com grandes volumes.
+        Rota: GET /{table}?mode=batch&batch_size=1000&max_batches=10
+        
+        Retorna formato estruturado:
+        {
+            "status": 200,
+            "mode": "batch",
+            "data": {
+                "batches": [
+                    {"range": "1-1000", "count": 1000, "data": [...]},
+                    {"range": "1001-2000", "count": 1000, "data": [...]}
+                ]
+            },
+            "meta": {
+                "batch_size": 1000,
+                "total_batches": 10,
+                "total_records": 10000,
+                "has_more": false
+            }
+        }
+        
+        Args:
+            table: Controller da tabela
+            params: Parâmetros da requisição
+            config: Configuração da tabela
+            field_map: Mapa de campos
+            include_relations: Se deve incluir relations
+        """
+        try:
+            # Parâmetros de batch
+            batch_size = int(params.get('batch_size', 1000))
+            max_batches = int(params.get('max_batches', 10))  # Limite de batches por requisição
+            start_batch = int(params.get('start_batch', 1))  # Qual batch começar (paginação de batches)
+            
+            # Validações
+            if batch_size < 1 or batch_size > 5000:
+                return {"status": 400, "error": "batch_size deve estar entre 1 e 5000"}
+            if max_batches < 1 or max_batches > 50:
+                return {"status": 400, "error": "max_batches deve estar entre 1 e 50"}
+            
+        except ValueError:
+            return {"status": 400, "error": "Parâmetros batch inválidos"}
+        
+        # Processa filtros (mesmo sistema do GET normal)
+        where_condition = None
+        for key, value in params.items():
+            if key in ('mode', 'batch_size', 'max_batches', 'start_batch', 'relations', 'include_total'):
+                continue
+            
+            field_name_raw = key
+            operator = 'eq'
+            
+            if '_' in key:
+                parts = key.rsplit('_', 1)
+                if parts[1] in ['gt', 'gte', 'lt', 'lte', 'neq', 'like', 'in']:
+                    field_name_raw = parts[0]
+                    operator = parts[1]
+            
+            real_field_name = field_map.get(field_name_raw.upper())
+            if real_field_name:
+                field_attr = table.field(real_field_name)
+                match operator:
+                    case 'eq':   where_condition = (field_attr == value)
+                    case 'gt':   where_condition = (field_attr > value)
+                    case 'gte':  where_condition = (field_attr >= value)
+                    case 'lt':   where_condition = (field_attr < value)
+                    case 'lte':  where_condition = (field_attr <= value)
+                    case 'neq':  where_condition = (field_attr != value)
+                    case 'like': where_condition = field_attr.like(str(value))
+        
+        # Conta total (com cache)
+        total_records = table.count(where=where_condition, use_cache=True)
+        
+        if total_records == 0:
+            return {
+                "status": 200,
+                "mode": "batch",
+                "data": {"batches": []},
+                "meta": {
+                    "batch_size": batch_size,
+                    "total_batches": 0,
+                    "total_records": 0,
+                    "has_more": False
+                }
+            }
+        
+        # Calcula batches
+        total_batches_available = (total_records + batch_size - 1) // batch_size  # Arredonda para cima
+        batches_to_fetch = min(max_batches, total_batches_available - start_batch + 1)
+        
+        if batches_to_fetch <= 0:
+            return {"status": 400, "error": f"start_batch {start_batch} excede total de batches disponíveis ({total_batches_available})"}
+        
+        batches_data = []
+        relation_names = self._get_relation_names(table)
+        
+        # Busca cada batch
+        for batch_num in range(start_batch, start_batch + batches_to_fetch):
+            page = batch_num
+            offset = (page - 1) * batch_size
+            
+            # Fetch batch
+            table.paginate(page=page, limit=batch_size, where=where_condition).execute()
+            
+            # Relations (se requisitado)
+            if include_relations and relation_names and table.records:
+                # Relations recursivas
+                self._fetch_relations_via_custom_select(table, table.records, recursive=True, max_depth=3)
+            
+            # Serializa
+            batch_data = [self._serialize(r, field_map, include_relations=include_relations, recursive_relations=True) for r in table.records]
+            
+            start_idx = offset + 1
+            end_idx = offset + len(batch_data)
+            
+            batches_data.append({
+                "range": f"{start_idx}-{end_idx}",
+                "batch_number": batch_num,
+                "count": len(batch_data),
+                "data": batch_data
+            })
+            
+            table.clear()  # Limpa para próximo batch
+        
+        has_more = (start_batch + batches_to_fetch - 1) < total_batches_available
+        
+        return {
+            "status": 200,
+            "mode": "batch",
+            "data": {"batches": batches_data},
+            "meta": {
+                "batch_size": batch_size,
+                "batches_returned": len(batches_data),
+                "total_batches": total_batches_available,
+                "total_records": total_records,
+                "current_batch_range": f"{start_batch}-{start_batch + len(batches_data) - 1}",
+                "has_more": has_more,
+                "next_batch": start_batch + batches_to_fetch if has_more else None
+            }
+        }
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 08/04/2026 '''
     
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #6 / made by: Nicolas Santos / created: 12/03/2026 '''
     def handle_multi_get(self, query_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -838,14 +1016,19 @@ class AutoRouter:
             return {"status": 500, "error": str(e)}
 
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
-    def _serialize(self, record_obj, field_map: Dict[str, str], max_relations: int = 100, include_relations: bool = False) -> Dict:
+    def _serialize(self, record_obj, field_map: Dict[str, str], max_relations: int = 100, 
+                   include_relations: bool = False, recursive_relations: bool = False, 
+                   current_depth: int = 0, max_depth: int = 3) -> Dict:
         """
         Serializa uma instância de TableController para dict usando mapa de campos.
-        Inclui automaticamente relations se houver (COM LIMITE).
+        Inclui automaticamente relations se houver (COM LIMITE), com suporte a aninhamento.
         
         Args:
             max_relations: Máximo de records de relations a incluir (evita sobrecarga)
             include_relations: Se True, inclui relations filtradas por este record
+            recursive_relations: Se True, serializa relations das relations (aninhamento)
+            current_depth: Profundidade atual de recursão
+            max_depth: Profundidade máxima de recursão (evita loops infinitos)
         """
         import datetime
         def convert_value(val):
@@ -948,10 +1131,32 @@ class AutoRouter:
                         
                         # LIMITA relations para não explodir o response!
                         limited_records = filtered_records[:max_relations]
-                        record_dict[rel_name] = [
-                            self._serialize_simple(rec, rel_field_map) 
-                            for rec in limited_records
-                        ]
+                        
+                        # ← RECURSÃO: Se habilitado e não excedeu profundidade, serializa com relations aninhadas
+                        if recursive_relations and current_depth < max_depth:
+                            # Verifica se a relation tem sub-relations
+                            rel_instance = relation_manager.get_instance()
+                            has_sub_relations = hasattr(rel_instance, 'relations') and rel_instance.relations
+                            
+                            if has_sub_relations:
+                                # Serializa com recursão (relations das relations)
+                                record_dict[rel_name] = [
+                                    self._serialize_nested_relation(rec, rel_field_map, rel_instance, 
+                                                                     max_relations, current_depth + 1, max_depth) 
+                                    for rec in limited_records
+                                ]
+                            else:
+                                # Sem sub-relations, usa serialização simples
+                                record_dict[rel_name] = [
+                                    self._serialize_simple(rec, rel_field_map) 
+                                    for rec in limited_records
+                                ]
+                        else:
+                            # Sem recursão, usa serialização simples
+                            record_dict[rel_name] = [
+                                self._serialize_simple(rec, rel_field_map) 
+                                for rec in limited_records
+                            ]
                         
                         # Indica se houve truncamento
                         if len(filtered_records) > max_relations:
@@ -962,17 +1167,144 @@ class AutoRouter:
     
     def _serialize_simple(self, record_obj, field_map: Dict[str, str]) -> Dict:
         """Serializa um record simples sem processar relations recursivamente"""
+        import datetime
+        
+        def convert_value(val):
+            if isinstance(val, datetime.datetime):
+                return val.isoformat()
+            if isinstance(val, datetime.date):
+                return val.isoformat()
+            if isinstance(val, datetime.time):
+                return val.isoformat()
+            return val
+        
         if isinstance(record_obj, dict):
-            return record_obj
+            return {k: convert_value(v) for k, v in record_obj.items()}
             
         data = {}
         for real_name in field_map.values():
             try:
                 val = getattr(record_obj, real_name)
                 if callable(val): continue
-                data[real_name] = val
+                data[real_name] = convert_value(val)
             except:
                 pass
+        return data
+    
+    def _serialize_nested_relation(self, record_obj, field_map: Dict[str, str], 
+                                   parent_instance, max_relations: int, 
+                                   current_depth: int, max_depth: int) -> Dict:
+        """
+        Serializa um record de relation que possui sub-relations (aninhamento).
+        
+        Args:
+            record_obj: Record a ser serializado
+            field_map: Mapa de campos do record
+            parent_instance: Instância da tabela pai (para acessar relations)
+            max_relations: Limite de records por relation
+            current_depth: Profundidade atual
+            max_depth: Profundidade máxima
+        """
+        import datetime
+        
+        def convert_value(val):
+            if isinstance(val, datetime.datetime):
+                return val.isoformat()
+            if isinstance(val, datetime.date):
+                return val.isoformat()
+            if isinstance(val, datetime.time):
+                return val.isoformat()
+            return val
+        
+        # Serializa campos básicos
+        if isinstance(record_obj, dict):
+            data = {k: convert_value(v) for k, v in record_obj.items()}
+        else:
+            data = {}
+            for real_name in field_map.values():
+                try:
+                    val = getattr(record_obj, real_name)
+                    if callable(val): continue
+                    data[real_name] = convert_value(val)
+                except:
+                    pass
+        
+        # Processa sub-relations se existirem e não excedeu profundidade
+        if current_depth < max_depth and hasattr(parent_instance, 'relations') and parent_instance.relations:
+            for rel_name, relation_manager in parent_instance.relations.items():
+                if not hasattr(relation_manager, 'records') or not relation_manager.records:
+                    continue
+                
+                # Identifica campos de relação
+                source_field = relation_manager.source_field
+                if isinstance(source_field, str):
+                    source_field_name = source_field
+                else:
+                    source_field_name = getattr(source_field, '_field_name', None) or getattr(source_field, 'field_name', None)
+                
+                target_field = relation_manager.target_field
+                if isinstance(target_field, str):
+                    target_field_name = target_field
+                else:
+                    target_field_name = getattr(target_field, '_field_name', None) or getattr(target_field, 'field_name', None)
+                
+                if not source_field_name or not target_field_name:
+                    continue
+                
+                # Filtra records da sub-relation
+                source_value = data.get(source_field_name)
+                if source_value is None:
+                    continue
+                
+                filtered_sub_records = [
+                    rec for rec in relation_manager.records
+                    if (rec.get(target_field_name) if isinstance(rec, dict) else getattr(rec, target_field_name, None)) == source_value
+                ]
+                
+                if not filtered_sub_records:
+                    continue
+                
+                # Monta field_map da sub-relation
+                sub_instance = relation_manager.get_instance()
+                sub_field_map = {}
+                ignore = {
+                    'db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
+                    'isUpdate', 'controller', 'select', 'insert', 'update', 'delete',
+                    'insert_recordset', 'update_recordset', 'delete_from', 'field',
+                    'exists', 'validate_fields', 'validate_write', 'clear', 'set_current',
+                    'get_table_columns', 'get_table_index', 'get_table_foreign_keys', 'get_table_total',
+                    'SelectForUpdate', 'get_columns_with_defaults', 'relations'
+                }
+                
+                for attr, val in sub_instance.__dict__.items():
+                    if attr not in ignore and not attr.startswith('_') and not callable(val):
+                        sub_field_map[attr.upper()] = attr
+                
+                # Limita records
+                limited_sub_records = filtered_sub_records[:max_relations]
+                
+                # Verifica se tem sub-sub-relations (recursão continua)
+                has_deeper_relations = hasattr(sub_instance, 'relations') and sub_instance.relations
+                
+                if has_deeper_relations:
+                    # Continua recursão
+                    data[rel_name] = [
+                        self._serialize_nested_relation(rec, sub_field_map, sub_instance,
+                                                       max_relations, current_depth + 1, max_depth)
+                        for rec in limited_sub_records
+                    ]
+                else:
+                    # Serialização simples (fim da recursão)
+                    data[rel_name] = [
+                        self._serialize_simple(rec, sub_field_map)
+                        for rec in limited_sub_records
+                    ]
+                
+                # Indica truncamento
+                if len(filtered_sub_records) > max_relations:
+                    data[f"{rel_name}_truncated"] = True
+                    data[f"{rel_name}_total"] = len(filtered_sub_records)
+        
         return data
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
 
