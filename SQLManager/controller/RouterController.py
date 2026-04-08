@@ -512,6 +512,8 @@ class AutoRouter:
                         continue
                     
                     ref_class = class_found
+                    # ← ATUALIZA o relation_manager para usar a classe correta (evita erro em set_records)
+                    relation_manager.ref_table_class = ref_class
                 
                 # Instancia a classe
                 child_instance = ref_class(self.db)
