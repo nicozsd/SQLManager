@@ -481,7 +481,40 @@ class AutoRouter:
 
         for rel_name, relation_manager in table.relations.items():
             try:
-                child_instance = relation_manager.ref_table_class(self.db)
+                # ← PROTEÇÃO: Valida se ref_table_class é uma classe ou módulo
+                ref_class = relation_manager.ref_table_class
+                
+                # Se for um módulo, tenta extrair a classe pelo nome da relation
+                if inspect.ismodule(ref_class):
+                    # Busca a classe no módulo (case-insensitive)
+                    class_found = None
+                    rel_name_upper = rel_name.upper()
+                    
+                    # Primeiro tenta __all__ se existir
+                    if hasattr(ref_class, '__all__'):
+                        for name in ref_class.__all__:
+                            if name.upper() == rel_name_upper:
+                                class_found = getattr(ref_class, name)
+                                break
+                    
+                    # Fallback: busca em dir(module)
+                    if not class_found:
+                        for attr_name in dir(ref_class):
+                            if attr_name.upper() == rel_name_upper:
+                                attr = getattr(ref_class, attr_name)
+                                if inspect.isclass(attr):
+                                    class_found = attr
+                                    break
+                    
+                    if not class_found:
+                        print(f"[AutoRouter] ERRO: Relation '{rel_name}' configurada com módulo, mas classe não encontrada no módulo.")
+                        print(f"[AutoRouter] SOLUÇÃO: Configure ref_table_class com a classe diretamente, não o módulo.")
+                        continue
+                    
+                    ref_class = class_found
+                
+                # Instancia a classe
+                child_instance = ref_class(self.db)
 
                 # ← Pega o campo SOURCE do pai (ex: self.RECID)
                 source_field = relation_manager.source_field
