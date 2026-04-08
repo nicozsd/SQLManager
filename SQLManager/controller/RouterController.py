@@ -576,6 +576,9 @@ class AutoRouter:
                         max_depth=max_depth,
                         current_depth=current_depth + 1
                     )
+                    # ← IMPORTANTE: Armazena a instância populada para reutilização na serialização
+                    # Isso garante que quando serializarmos, teremos acesso às sub-relations
+                    relation_manager._populated_instance = child_instance
 
             except Exception as e:
                 print(f"[AutoRouter] Erro ao popular relation '{rel_name}': {e}")
@@ -1147,8 +1150,8 @@ class AutoRouter:
                     ]
                     
                     if filtered_records:
-                        # Pega o field_map da tabela relacionada
-                        rel_instance = relation_manager.get_instance()
+                        # Pega o field_map da tabela relacionada (usa instância populada se existir)
+                        rel_instance = getattr(relation_manager, '_populated_instance', None) or relation_manager.get_instance()
                         rel_field_map = {}
                         
                         ignore = {
@@ -1169,8 +1172,8 @@ class AutoRouter:
                         
                         # ← RECURSÃO: Se habilitado e não excedeu profundidade, serializa com relations aninhadas
                         if recursive_relations and current_depth < max_depth:
-                            # Verifica se a relation tem sub-relations
-                            rel_instance = relation_manager.get_instance()
+                            # Usa a instância populada pela busca recursiva (se existir)
+                            rel_instance = getattr(relation_manager, '_populated_instance', None) or relation_manager.get_instance()
                             has_sub_relations = hasattr(rel_instance, 'relations') and rel_instance.relations
                             
                             if has_sub_relations:
