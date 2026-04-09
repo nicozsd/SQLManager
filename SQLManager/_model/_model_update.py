@@ -40,7 +40,7 @@ class ModelUpdater:
             CREATE TABLE {name} ({content})
             """
             
-            self.db.doQuery(query)
+            self.db.executeCommand(query)
 
     def ensurer(self, ref_Path: Path, content: str):
         '''Garante que arquivo exista com conteúdo específico'''
