@@ -1049,12 +1049,7 @@ class AutoRouter:
             if updated:
                 # Broadcast WebSocket (automático)
                 if self.ws_manager and self.ws_manager.enabled:
-                    table.select().where(table.RECID == recid).execute()
-                    if table.records:
-                        data = self._serialize(table.records[0], field_map, include_relations=False)
-                        self.ws_manager.broadcast_update(table.source_name, recid, data)
-                    else:
-                        self.ws_manager.broadcast_update(table.source_name, recid)
+                    self.ws_manager.broadcast_update(table.source_name, recid)                    
                 return {"status": 200, "message": "Updated successfully"}
             else:
                 return {"status": 304, "message": "No changes made"}
