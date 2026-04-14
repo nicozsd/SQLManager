@@ -572,7 +572,7 @@ class TableController(metaclass=TableControllerMeta):
         offset = (page - 1) * limit
         mgr = self.select().limit(limit).offset(offset)
         
-        if where:
+        if where is not None:
             mgr = mgr.where(where)
         
         return mgr

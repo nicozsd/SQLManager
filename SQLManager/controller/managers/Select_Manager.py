@@ -366,16 +366,16 @@ class SelectManager:
         query = f"SELECT {distinct_keyword}{', '.join(select_columns)} FROM {self._controller.source_name} AS {main_alias}" + ''.join(join_clauses)
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         
-        if self._where_conditions or self._where_conditions is not None:
+        if self._where_conditions is not None:
             where_sql, where_values = self._where_conditions.to_sql()
             query += f" WHERE {where_sql}"
             values.extend(where_values if isinstance(where_values, list) else [where_values])
         
-        if self._group_by or self._group_by is not None:
+        if self._group_by is not None:
             group_clauses = [f"{main_alias}.{field}" for field in self._group_by]
             query += " GROUP BY " + ", ".join(group_clauses)
         
-        if self._having_conditions or self._having_conditions is not None:
+        if self._having_conditions is not None:
             having_clauses = []
 
             for h in self._having_conditions:
@@ -387,7 +387,7 @@ class SelectManager:
         
         # ORDER BY + PAGINAÇÃO (SEMPRE aplicado se houver limit)
         # Se não tiver ORDER BY explícito mas tiver LIMIT, usa RECID como padrão
-        if self._order_by or self._order_by is not None:
+        if self._order_by is not None:
             query += f" ORDER BY {main_alias}.{self._order_by}"
         elif self._limit is not None and self._limit > 0:
             # Adiciona ORDER BY automático para permitir paginação

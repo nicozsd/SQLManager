@@ -655,34 +655,48 @@ class AutoRouter:
         # Processa filtros (campo=valor, campo_gt=valor, etc)
         if params and len(params) > 0 and any(k not in ('page', 'limit', 'relations', 'include_total') for k in params):
             for key, value in params.items():
-                if key in ('page', 'limit', 'include_relations', 'include_total'):
+                if key in ('page', 'limit', 'include_relations', 'include_total', 'relations'):
                     continue
-            
-            field_name_raw = key
-            operator = 'eq'
-            
-            # Separa operador (ex: PRICE_gt -> field: PRICE, op: gt)
-            if '_' in key:
-                parts = key.rsplit('_', 1)
-                if parts[1] in ['gt', 'gte', 'lt', 'lte', 'neq', 'like', 'in']:
-                    field_name_raw = parts[0]
-                    operator = parts[1]
-            
-            # Busca campo no mapa (O(1))
-            real_field_name = field_map.get(field_name_raw.upper())
-            
-            if real_field_name:
-                field_attr = table.field(real_field_name)
                 
-                # Aplica operador específico
-                match operator:
-                    case 'eq':   where_condition = (field_attr == value)
-                    case 'gt':   where_condition = (field_attr > value)
-                    case 'gte':  where_condition = (field_attr >= value)
-                    case 'lt':   where_condition = (field_attr < value)
-                    case 'lte':  where_condition = (field_attr <= value)
-                    case 'neq':  where_condition = (field_attr != value)
-                    case 'like': where_condition = field_attr.like(str(value))
+                field_name_raw = key
+                operator = 'eq'
+                
+                # Separa operador (ex: PRICE_gt -> field: PRICE, op: gt)
+                if '_' in key:
+                    parts = key.rsplit('_', 1)
+                    if parts[1] in ['eq', 'gt', 'gte', 'lt', 'lte', 'neq', 'like', 'in']:
+                        field_name_raw = parts[0]
+                        operator = parts[1]
+                
+                # Busca campo no mapa (O(1))
+                real_field_name = field_map.get(field_name_raw.upper())
+                
+                if real_field_name:
+                    field_attr = table.field(real_field_name)
+                    
+                    # Conversão automática de tipo para campos numéricos
+                    try:
+                        if hasattr(field_attr, 'type') and 'int' in str(field_attr.type).lower():
+                            value = int(value)
+                        elif real_field_name in ('RECID', 'ID') or real_field_name.endswith('_ID'):
+                            value = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                    
+                    # Aplica operador específico
+                    condition = None
+                    match operator:
+                        case 'eq':   condition = (field_attr == value)
+                        case 'gt':   condition = (field_attr > value)
+                        case 'gte':  condition = (field_attr >= value)
+                        case 'lt':   condition = (field_attr < value)
+                        case 'lte':  condition = (field_attr <= value)
+                        case 'neq':  condition = (field_attr != value)
+                        case 'like': condition = field_attr.like(str(value))
+                    
+                    # Combina múltiplos filtros com AND
+                    if condition is not None:
+                        where_condition = condition if where_condition is None else (where_condition & condition)
         
         # USA O MÉTODO OTIMIZADO DO CONTROLLER (com cache de 60s)
         select_query = table.paginate(page=page, limit=limit, where=where_condition)
@@ -773,21 +787,36 @@ class AutoRouter:
             
             if '_' in key:
                 parts = key.rsplit('_', 1)
-                if parts[1] in ['gt', 'gte', 'lt', 'lte', 'neq', 'like', 'in']:
+                if parts[1] in ['eq', 'gt', 'gte', 'lt', 'lte', 'neq', 'like', 'in']:
                     field_name_raw = parts[0]
                     operator = parts[1]
             
             real_field_name = field_map.get(field_name_raw.upper())
             if real_field_name:
                 field_attr = table.field(real_field_name)
+                
+                # Conversão automática de tipo para campos numéricos
+                try:
+                    if hasattr(field_attr, 'type') and 'int' in str(field_attr.type).lower():
+                        value = int(value)
+                    elif real_field_name in ('RECID', 'ID') or real_field_name.endswith('_ID'):
+                        value = int(value)
+                except (ValueError, TypeError):
+                    pass
+                
+                condition = None
                 match operator:
-                    case 'eq':   where_condition = (field_attr == value)
-                    case 'gt':   where_condition = (field_attr > value)
-                    case 'gte':  where_condition = (field_attr >= value)
-                    case 'lt':   where_condition = (field_attr < value)
-                    case 'lte':  where_condition = (field_attr <= value)
-                    case 'neq':  where_condition = (field_attr != value)
-                    case 'like': where_condition = field_attr.like(str(value))
+                    case 'eq':   condition = (field_attr == value)
+                    case 'gt':   condition = (field_attr > value)
+                    case 'gte':  condition = (field_attr >= value)
+                    case 'lt':   condition = (field_attr < value)
+                    case 'lte':  condition = (field_attr <= value)
+                    case 'neq':  condition = (field_attr != value)
+                    case 'like': condition = field_attr.like(str(value))
+                
+                # Combina múltiplos filtros com AND
+                if condition is not None:
+                    where_condition = condition if where_condition is None else (where_condition & condition)
         
         # Conta total (com cache)
         total_records = table.count(where=where_condition, use_cache=True)
