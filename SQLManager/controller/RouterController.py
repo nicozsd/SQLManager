@@ -70,7 +70,12 @@ class AutoRouter:
         
         # WebSocket Manager (DESABILITADO por padrão - use enable_websocket=True no config)
         enable_ws = self.config.get('enable_websocket', False)
+        print(f'[AutoRouter] Configurando WebSocket Manager...')
+        print(f'[AutoRouter]   - enable_websocket no config: {enable_ws}')
+        print(f'[AutoRouter]   - app fornecido: {app is not None}')
+        print(f'[AutoRouter]   - socketio fornecido: {socketio is not None}')
         self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws) if app else None
+        print(f'[AutoRouter]   - ws_manager criado: {self.ws_manager is not None}')
         
         # Registra rotas Flask automaticamente se app foi fornecido
         if self.app and self.enabled:
@@ -552,10 +557,9 @@ class AutoRouter:
 
                 # ← OTIMIZAÇÃO: Processa em batches para evitar milhares de parâmetros
                 child_field = child_instance.field(target_field_name)
-                batch_size = 500  # Limite seguro para a maioria dos DBs
+                batch_size = 200  # Limite seguro para a maioria dos DBs
                 all_child_records = []
-
-                # Divide em lotes de 500 valores
+                
                 for i in range(0, len(parent_values), batch_size):
                     batch = parent_values[i:i + batch_size]
                     condition = child_field.in_(batch)
@@ -1007,15 +1011,22 @@ class AutoRouter:
                 recid_value = table.RECID.value if hasattr(table.RECID, 'value') else table.RECID
                 
                 # Broadcast WebSocket (automático)
+                print(f'[AutoRouter] INSERT bem-sucedido: table={table.source_name}, recid={recid_value}')
+                print(f'[AutoRouter]   - ws_manager existe: {self.ws_manager is not None}')
+                if self.ws_manager:
+                    print(f'[AutoRouter]   - ws_manager.enabled: {self.ws_manager.enabled}')
+                
                 if self.ws_manager and self.ws_manager.enabled:
+                    print(f'[AutoRouter] Chamando broadcast_insert...')
                     # Busca dados completos do registro inserido
                     table.select().where(table.RECID == recid_value).execute()
-                    if table.records:
-                        data = self._serialize(table.records[0], field_map, include_relations=False)
-                        self.ws_manager.broadcast_insert(table.source_name, recid_value, data)
+                    if table.records:                        
+                        self.ws_manager.broadcast_insert(table.source_name, recid_value)
                     else:
                         # Fallback: notificação simples
                         self.ws_manager.broadcast_insert(table.source_name, recid_value)
+                else:
+                    print(f'[AutoRouter] Broadcast NÃO chamado (ws_manager ou enabled é False)')
                 
                 return {"status": 201, "data": {"RECID": recid_value}, "message": "Created"}
             else:
@@ -1048,9 +1059,18 @@ class AutoRouter:
             updated = table.update()
             if updated:
                 # Broadcast WebSocket (automático)
+                print(f'[AutoRouter] UPDATE bem-sucedido: table={table.source_name}, recid={recid}')
+                print(f'[AutoRouter]   - ws_manager existe: {self.ws_manager is not None}')
+                if self.ws_manager:
+                    print(f'[AutoRouter]   - ws_manager.enabled: {self.ws_manager.enabled}')
+                
                 if self.ws_manager and self.ws_manager.enabled:
-                    self.ws_manager.broadcast_update(table.source_name, recid)                    
-                return {"status": 200, "message": "Updated successfully"}
+                    print(f'[AutoRouter] Chamando broadcast_update...')
+                    self.ws_manager.broadcast_update(table.source_name, recid)
+                else:
+                    print(f'[AutoRouter] Broadcast NÃO chamado (ws_manager ou enabled é False)')
+                
+                return {"status": 200, "data": {"RECID": recid}, "message": "Updated successfully"}
             else:
                 return {"status": 304, "message": "No changes made"}
         except Exception as e:
@@ -1086,8 +1106,16 @@ class AutoRouter:
                 table.delete_from().where(table.RECID == recid).execute()
             
             # Broadcast WebSocket (automático)
+            print(f'[AutoRouter] DELETE bem-sucedido: table={table.source_name}, recid={recid}')
+            print(f'[AutoRouter]   - ws_manager existe: {self.ws_manager is not None}')
+            if self.ws_manager:
+                print(f'[AutoRouter]   - ws_manager.enabled: {self.ws_manager.enabled}')
+            
             if self.ws_manager and self.ws_manager.enabled:
+                print(f'[AutoRouter] Chamando broadcast_delete...')
                 self.ws_manager.broadcast_delete(table.source_name, recid)
+            else:
+                print(f'[AutoRouter] Broadcast NÃO chamado (ws_manager ou enabled é False)')
             
             return {"status": 200, "message": "Deleted successfully"}
         except Exception as e:
