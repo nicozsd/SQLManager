@@ -817,6 +817,7 @@ class AutoRouter:
                     case 'lte':  condition = (field_attr <= value)
                     case 'neq':  condition = (field_attr != value)
                     case 'like': condition = field_attr.like(str(value))
+                    case 'in':   condition = field_attr.in_(value.split(','))
                 
                 # Combina múltiplos filtros com AND
                 if condition is not None:
