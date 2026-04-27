@@ -1,5 +1,6 @@
 import os
 import pyodbc
+import pymysql
 import threading
 
 from queue import Queue, Empty
@@ -11,10 +12,14 @@ class _TTS_Manager:
     Gerenciador de níveis de transação (TTS)
     '''
     
+    def _set_autocommit(self, value: bool):
+        '''A ser implementado nas classes filhas (Define comportamento do autocommit)'''
+        pass
+    
     def ttsbegin(self):
         '''Adiciona um nível de transação'''
         if self.tts_level == 0:
-            self.connection.autocommit = False
+            self._set_autocommit(False)
         self.tts_level += 1
 
     def ttscommit(self):
@@ -23,13 +28,13 @@ class _TTS_Manager:
             self.tts_level -= 1
             if self.tts_level == 0:
                 self.connection.commit()
-                self.connection.autocommit = True
+                self._set_autocommit(True)
 
     def ttsabort(self):
         '''Aborta a transação, desfazendo todas as operações'''
         if self.tts_level > 0:
             self.connection.rollback()
-            self.connection.autocommit = True
+            self._set_autocommit(True)
             self.tts_level = 0
 
 class _Consult_Manager:
@@ -100,11 +105,14 @@ class Transaction (_TTS_Manager, _Consult_Manager):
     @tts_level.setter
     def tts_level(self, value):
         self._tts_level = value
+        
+    def _set_autocommit(self, value: bool):
+        self._db._set_autocommit_on_conn(self.connection, value)
     
     def __enter__(self):
         '''monta um transação (isolada)'''
         self._connection = self._db._get_connection()
-        self._connection.autocommit = True
+        self._set_autocommit(True)
         self.ttsbegin()
         return self
     
@@ -189,45 +197,43 @@ class database_connection (_TTS_Manager, _Consult_Manager):
         """
         if CoreConfig.is_configured():
             config   = CoreConfig.get_db_config()
-            server   = _Server   or config['server']
-            database = _Database or config['database']
-            user     = _User     or config['user']
-            password = _Password or config['password']
-            driver   = config['driver']
+            server   = _Server   or config.get('server')
+            database = _Database or config.get('database')
+            user     = _User     or config.get('user')
+            password = _Password or config.get('password')
+            driver   = config.get('driver')
         else:
             server   = _Server   or os.getenv('DB_SERVER')
             database = _Database or os.getenv('DB_DATABASE')
             user     = _User     or os.getenv('DB_USER')
             password = _Password or os.getenv('DB_PASSWORD')
             driver   = _Driver   or os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
+            
+        self.db_type = config.get('DB_TYPE', 'sqlserver')
+
+        self.db_params = {
+            'server': server,
+            'database': database,
+            'user': user,
+            'password': password,
+            'driver': driver
+        }
         
-        # Monta connection string dependendo do driver/banco
-        drv_lower = (driver or '').lower()
-        if 'mysql' in drv_lower or 'mariadb' in drv_lower:
-            port = os.getenv('DB_PORT', '3306')
-            # MySQL via ODBC (ex.: MySQL ODBC 8.0 Unicode Driver)
-            self.connection_string = (
-                f"DRIVER={{{driver}}};"
-                f"SERVER={server};"
-                f"PORT={port};"
-                f"DATABASE={database};"
-                f"UID={user};"
-                f"PWD={password};"
-                f"CHARSET=utf8mb4;"
-            )
-        else:
-            # Padrão: SQL Server (ODBC)
-            self.connection_string = (
-                f"DRIVER={{{driver}}};"
-                f"SERVER={server};"
-                f"DATABASE={database};"
-                f"UID={user};"
-                f"PWD={password};"
-                f"Encrypt=no;TrustServerCertificate=yes;"
-            )
+        # Padrão da string de conexão para SQL Server (ODBC)
+        self.connection_string = (
+            f"DRIVER={{{driver}}};"
+            f"SERVER={server};"
+            f"DATABASE={database};"
+            f"UID={user};"
+            f"PWD={password};"
+            f"Encrypt=no;TrustServerCertificate=yes;"
+        )
         self._pool    = Queue(maxsize=_pool_size)
         self._timeout = _timeout
         self._local   = threading.local() 
+        
+        print(self.db_params)
+        print(self.db_type)
     
     @property
     def connection(self):
@@ -242,20 +248,41 @@ class database_connection (_TTS_Manager, _Consult_Manager):
     @tts_level.setter
     def tts_level(self, value):
         self._local.tts_level = value
+        
+    def _set_autocommit_on_conn(self, conn, value: bool):
+        '''Seta o autocommit de forma segura dependendo do driver'''
+        if self.db_type == 'mysql':
+            conn.autocommit(value)
+        else:
+            conn.autocommit = value
+            
+    def _set_autocommit(self, value: bool):
+        self._set_autocommit_on_conn(self.connection, value)
     
     def _get_connection(self):
         '''Pega conexão do pool ou cria nova imediatamente se vazio'''
         try:
             return self._pool.get_nowait()
         except Empty:
-            return pyodbc.connect(self.connection_string)
+            if self.db_type == 'mysql':
+                port = int(os.getenv('DB_PORT', '3306'))
+                return pymysql.connect(
+                    host=self.db_params['server'],
+                    user=self.db_params['user'],
+                    password=self.db_params['password'],
+                    database=self.db_params['database'],
+                    port=port,
+                    autocommit=True
+                )
+            else:
+                return pyodbc.connect(self.connection_string)
     
     def _return_connection(self, conn):
         '''Devolve conexão ao pool ou fecha se cheio'''
         if not conn:
             return
         try:
-            conn.autocommit = True
+            self._set_autocommit_on_conn(conn, True)
             self._pool.put_nowait(conn)
         except:
             try:
@@ -289,11 +316,24 @@ class database_connection (_TTS_Manager, _Consult_Manager):
     def can_connect(self) -> bool:
         '''Testa se a conexão pode ser estabelecida'''
         try:
-            conn = pyodbc.connect(self.connection_string, timeout=self._timeout)
+            if self.db_type == 'mysql':
+                print('mysql')
+                port = int(os.getenv('DB_PORT', '3306'))
+                conn = pymysql.connect(
+                    host=self.db_params['server'],
+                    user=self.db_params['user'],
+                    password=self.db_params['password'],
+                    database=self.db_params['database'],
+                    port=port,
+                    connect_timeout=self._timeout
+                )
+            else:
+                conn = pyodbc.connect(self.connection_string, timeout=self._timeout)
             conn.close()
             return True
         except:
             return False
+
 
     def transaction(self) -> Transaction:
         return Transaction(self)
