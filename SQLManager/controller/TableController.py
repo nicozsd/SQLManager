@@ -12,6 +12,8 @@ from .managers           import SelectManager, InsertManager, UpdateManager, Del
 
 from .SystemController   import SystemController
 
+from .dialect            import ControllerBase
+
 # Registry global de campos por classe (para acesso via ClassName.FIELD)
 _TABLE_FIELD_REGISTRY: Dict[str, Dict[str, 'EDTController']] = {}
 
@@ -48,7 +50,7 @@ class TableControllerMeta(type):
         
         raise AttributeError(f"'{class_name}' não possui atributo '{name}'")
 
-class TableController(metaclass=TableControllerMeta):
+class TableController(ControllerBase, metaclass=TableControllerMeta):
     """
     Classe de controle de tabelas do banco de dados (SQL Server) - REFATORADA
     
@@ -171,21 +173,8 @@ class TableController(metaclass=TableControllerMeta):
         - Em contexto normal: retorna o VALOR
         - Se houver query pendente, executa antes de retornar o campo
         '''
-        protected_attrs = {
-            'db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
-            '_where_conditions', '_columns', '_joins', '_order_by', '_limit',
-            '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
-            'controller', '__class__', '__dict__', 'isUpdate', '_pending_wrapper',
-            '__select_manager', 'field', 'select', 'insert', 'update', 'delete',
-            'insert_recordset', 'update_recordset', 'delete_from', 'set_current',
-            'clear', 'validate_fields', 'validate_write', 'get_table_columns',
-            'get_columns_with_defaults', 'get_table_index', 'get_table_foreign_keys',
-            'get_table_total', 'count', 'paginate', 'exists', '_get_field_instance', '_is_aggregate_function',
-            '_extract_field_from_aggregate', 'SelectForUpdate', '_register_class_fields',
-            'table_name', 'new_Relation', 'relations'
-        }
         
-        if name in protected_attrs or name.startswith('_'):
+        if name in self.protected_attr() or name.startswith('_'):
             return object.__getattribute__(self, name)
         
         # Se estiver acessando um campo e houver wrapper pendente, executa
@@ -214,10 +203,7 @@ class TableController(metaclass=TableControllerMeta):
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
     def __setattr__(self, name: str, value: Any):
         '''Intercepta atribuições para validar EDT/Enum'''
-        if name in ('db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
-                    '_where_conditions', '_columns', '_joins', '_order_by', '_limit', 
-                    '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
-                    'controller', '_pending_wrapper', '__select_manager'):
+        if name in self.protected_attr() or name.startswith('_'):
             object.__setattr__(self, name, value)
             return
 
@@ -328,7 +314,7 @@ class TableController(metaclass=TableControllerMeta):
         Returns:
             bool: True se for uma função de agregação
         '''
-        aggregate_functions = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'GROUP_CONCAT', 'STRING_AGG']
+        aggregate_functions = self.aggr_functions()
         column_upper = column.upper().strip()
         return any(func in column_upper for func in aggregate_functions)
 
@@ -361,7 +347,7 @@ class TableController(metaclass=TableControllerMeta):
             return self.Columns
         
         try:
-            query = f"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?"
+            query = self.table_Columns()
             rows = self.db.doQuery(query, (self.source_name,))
             self.Columns = [[row[0], row[1], row[2]] for row in rows]
         except:

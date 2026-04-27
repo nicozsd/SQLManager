@@ -201,14 +201,30 @@ class database_connection (_TTS_Manager, _Consult_Manager):
             password = _Password or os.getenv('DB_PASSWORD')
             driver   = _Driver   or os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
         
-        self.connection_string = (
-            f"DRIVER={{{driver}}};"
-            f"SERVER={server};"
-            f"DATABASE={database};"
-            f"UID={user};"
-            f"PWD={password};"
-            f"Encrypt=no;TrustServerCertificate=yes;"
-        )
+        # Monta connection string dependendo do driver/banco
+        drv_lower = (driver or '').lower()
+        if 'mysql' in drv_lower or 'mariadb' in drv_lower:
+            port = os.getenv('DB_PORT', '3306')
+            # MySQL via ODBC (ex.: MySQL ODBC 8.0 Unicode Driver)
+            self.connection_string = (
+                f"DRIVER={{{driver}}};"
+                f"SERVER={server};"
+                f"PORT={port};"
+                f"DATABASE={database};"
+                f"UID={user};"
+                f"PWD={password};"
+                f"CHARSET=utf8mb4;"
+            )
+        else:
+            # Padrão: SQL Server (ODBC)
+            self.connection_string = (
+                f"DRIVER={{{driver}}};"
+                f"SERVER={server};"
+                f"DATABASE={database};"
+                f"UID={user};"
+                f"PWD={password};"
+                f"Encrypt=no;TrustServerCertificate=yes;"
+            )
         self._pool    = Queue(maxsize=_pool_size)
         self._timeout = _timeout
         self._local   = threading.local() 
