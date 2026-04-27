@@ -29,3 +29,12 @@ class SQLServerMixin(DialectMixin, dialect="sqlserver"):
     def table_Columns(self) -> str:
         return "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?"
     
+    def format_pagination(self, limit: int, offset: int) -> str:
+        return f" OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY"
+
+    def format_index_hint(self, index_hint: str) -> str:
+        return f" WITH (INDEX({index_hint}))" if index_hint else ""
+
+    def get_parameter_marker(self) -> str:
+        # pyodbc padrão usa '?'
+        return "?"

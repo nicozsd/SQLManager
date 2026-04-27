@@ -22,3 +22,19 @@ class MySQLMixin(DialectMixin, dialect="mysql"):
         }
 
         return protected_attrs
+
+    def aggr_functions(self) -> list:
+        return ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'GROUP_CONCAT']
+    
+    def table_Columns(self) -> str:
+        return "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = %s AND TABLE_SCHEMA = DATABASE()"
+
+    def format_pagination(self, limit: int, offset: int) -> str:
+        return f" LIMIT {limit} OFFSET {offset}"
+
+    def format_index_hint(self, index_hint: str) -> str:
+        return f" USE INDEX ({index_hint})" if index_hint else ""
+
+    def get_parameter_marker(self) -> str:
+        # Drivers PyMySQL/mysql-connector usa "%s"
+        return "%s"

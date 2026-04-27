@@ -13,11 +13,12 @@ from .managers           import SelectManager, InsertManager, UpdateManager, Del
 from .SystemController   import SystemController
 
 from .dialect            import ControllerBase
+from abc                 import ABCMeta
 
 # Registry global de campos por classe (para acesso via ClassName.FIELD)
 _TABLE_FIELD_REGISTRY: Dict[str, Dict[str, 'EDTController']] = {}
 
-class TableControllerMeta(type):
+class TableControllerMeta(ABCMeta):
     '''Metaclass para permitir acesso a campos via ClassName.FIELD'''
     
     def __getattr__(cls, name: str):

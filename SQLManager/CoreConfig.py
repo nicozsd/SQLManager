@@ -30,6 +30,7 @@ class CoreConfig:
     _db_user: Optional[str] = None
     _db_password: Optional[str] = None
     _db_driver: str = "ODBC Driver 18 for SQL Server"
+    _db_type: str = "sqlserver"
     
     _custom_regex: Dict[str, str] = {}
 
@@ -46,6 +47,7 @@ class CoreConfig:
                   db_user: Optional[str] = None,
                   db_password: Optional[str] = None,
                   db_driver: Optional[str] = None,
+                  db_type: Optional[str] = None,
                   load_from_env: bool = True):
         """
         Configura o SQLManager com as credenciais do projeto host
@@ -56,6 +58,7 @@ class CoreConfig:
             db_user: Usuário do banco
             db_password: Senha do banco
             db_driver: Driver ODBC (opcional)
+            db_type: Tipo do banco de dados ('sqlserver', 'mysql', etc.)
             load_from_env: Se True, tenta carregar do .env do projeto host primeiro
         
         Exemplo:
@@ -71,6 +74,11 @@ class CoreConfig:
             cls._db_database = db_database or os.getenv('DB_DATABASE')
             cls._db_user = db_user or os.getenv('DB_USER')
             cls._db_password = db_password or os.getenv('DB_PASSWORD')
+            
+            # Carrega do env e sobrescreve apenas se o usuário não passou nos argumentos
+            env_db_type = os.getenv('DB_TYPE')
+            if env_db_type and not db_type:
+                db_type = env_db_type
         else:
             cls._db_server = db_server
             cls._db_database = db_database
@@ -79,6 +87,8 @@ class CoreConfig:
         
         if db_driver:
             cls._db_driver = db_driver
+        
+        cls._db_type = (db_type or "sqlserver").lower()
         
         cls._is_configured = True
     
@@ -93,14 +103,15 @@ class CoreConfig:
         Retorna as configurações de banco de dados
         
         Returns:
-            Dict com server, database, user, password, driver
+            Dict com server, database, user, password, driver, type
         """
         return {
             'server': cls._db_server,
             'database': cls._db_database,
             'user': cls._db_user,
             'password': cls._db_password,
-            'driver': cls._db_driver
+            'driver': cls._db_driver,
+            'type': cls._db_type
         }
     
     @classmethod
@@ -192,6 +203,7 @@ class CoreConfig:
         cls._db_user = None
         cls._db_password = None
         cls._db_driver = "ODBC Driver 18 for SQL Server"
+        cls._db_type = "sqlserver"
         cls._custom_regex = {}
         cls._router_config = {}
         cls._is_configured = False
@@ -211,6 +223,7 @@ class CoreConfig:
                 'db_database': 'MyDB',
                 'db_user': 'admin',
                 'db_password': 'pass123',
+                'db_type': 'mysql',
                 'router_config': {
                     'enable_dynamic_routes': True,
                     'url_suffix': 'api/v1',
@@ -229,6 +242,7 @@ class CoreConfig:
             db_user=config.get('db_user'),
             db_password=config.get('db_password'),
             db_driver=config.get('db_driver'),
+            db_type=config.get('db_type'),
             load_from_env=config.get('load_from_env', True)
         )
         

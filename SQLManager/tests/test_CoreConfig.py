@@ -36,7 +36,8 @@ class TestCoreConfig(unittest.TestCase):
         'DB_SERVER': 'env_server',
         'DB_DATABASE': 'env_db',
         'DB_USER': 'env_user',
-        'DB_PASSWORD': 'env_password'
+        'DB_PASSWORD': 'env_password',
+        'DB_TYPE': 'mysql'
     })
     def test_configure_from_env(self):
         """Testa o carregamento de configuração puramente de variáveis de ambiente."""
@@ -49,6 +50,7 @@ class TestCoreConfig(unittest.TestCase):
             self.assertEqual(config['database'], 'env_db')
             self.assertEqual(config['user'], 'env_user')
             self.assertEqual(config['password'], 'env_password')
+            self.assertEqual(config.get('type', 'sqlserver'), 'mysql')
             self.assertTrue(CoreConfig.is_configured())
             print("Status: Ok")
         except:
@@ -72,6 +74,7 @@ class TestCoreConfig(unittest.TestCase):
             self.assertEqual(config['database'], 'arg_db')
             self.assertEqual(config['user'], 'arg_user')
             self.assertEqual(config['password'], 'arg_password')
+            self.assertEqual(config.get('type', 'sqlserver'), 'sqlserver') # Default deve ser sqlserver
             print("Status: Ok")
         except:
             print("Status: Error")
@@ -81,7 +84,8 @@ class TestCoreConfig(unittest.TestCase):
         'DB_SERVER': 'env_server',
         'DB_DATABASE': 'env_db',
         'DB_USER': 'env_user',
-        'DB_PASSWORD': 'env_password'
+        'DB_PASSWORD': 'env_password',
+        'DB_TYPE': 'mysql'
     })
     def test_configure_args_override_env(self):
         """Testa se os argumentos diretos sobrescrevem as variáveis de ambiente."""
@@ -90,6 +94,7 @@ class TestCoreConfig(unittest.TestCase):
             CoreConfig.configure(
                 db_server='arg_server',  # Deve sobrescrever 'env_server'
                 db_user='arg_user',      # Deve sobrescrever 'env_user'
+                db_type='postgres',      # Deve sobrescrever 'mysql' do env
                 load_from_env=True
             )
             config = CoreConfig.get_db_config()
@@ -97,6 +102,7 @@ class TestCoreConfig(unittest.TestCase):
             # Estes devem vir dos argumentos
             self.assertEqual(config['server'], 'arg_server')
             self.assertEqual(config['user'], 'arg_user')
+            self.assertEqual(config.get('type'), 'postgres')
 
             # Estes devem vir do ambiente
             self.assertEqual(config['database'], 'env_db')
@@ -113,6 +119,7 @@ class TestCoreConfig(unittest.TestCase):
             full_config = {
                 "db_server": "dict_server",
                 "db_database": "dict_db",
+                "db_type": "mysql",
                 "custom_regex": {
                     "DictRegex": r"^[A-Z]+$"
                 },
@@ -125,10 +132,35 @@ class TestCoreConfig(unittest.TestCase):
             db_conf = CoreConfig.get_db_config()
             self.assertEqual(db_conf['server'], 'dict_server')
             self.assertEqual(db_conf['database'], 'dict_db')
+            self.assertEqual(db_conf.get('type'), 'mysql')
 
             self.assertTrue(CoreConfig.has_regex('DictRegex'))
             router_conf = CoreConfig.get_router_config()
             self.assertFalse(router_conf['enable_dynamic_routes'])
+            print("Status: Ok")
+        except:
+            print("Status: Error")
+            raise
+
+    def test_explicit_sqlserver_config(self):
+        """Testa a configuração explícita para SQL Server, validando formatação (case-insensitive)."""
+        print("\n[TESTE] CoreConfig - Tipo de Banco: SQL Server explícito")
+        try:
+            CoreConfig.configure(db_type="SQLServer", load_from_env=False)
+            config = CoreConfig.get_db_config()
+            self.assertEqual(config.get('type'), 'sqlserver')
+            print("Status: Ok")
+        except:
+            print("Status: Error")
+            raise
+
+    def test_explicit_mysql_config(self):
+        """Testa a configuração explícita para MySQL, validando formatação (case-insensitive)."""
+        print("\n[TESTE] CoreConfig - Tipo de Banco: MySQL explícito")
+        try:
+            CoreConfig.configure(db_type="MySql", load_from_env=False)
+            config = CoreConfig.get_db_config()
+            self.assertEqual(config.get('type'), 'mysql')
             print("Status: Ok")
         except:
             print("Status: Error")
