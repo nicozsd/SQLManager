@@ -605,7 +605,10 @@ class AutoRouter:
             if path_parts and path_parts[0].isdigit():                                
                 recid = int(path_parts[0])
                 if table.exists(table.RECID == recid):
-                    table.select().where(table.RECID == recid).execute()
+                    select_query = table.select().where(table.RECID == recid)
+                    if include_relations and relation_names:
+                        select_query = select_query.with_relations(*relation_names)
+                    select_query.execute()
                     if include_relations and relation_names:
                         # Relations recursivas quando relations=true
                         self._fetch_relations_via_custom_select(table, table.records, recursive=True, max_depth=3)                        
@@ -630,6 +633,8 @@ class AutoRouter:
                         condition = self._evaluate_condition(route.get('where', '1==1'))
 
                         select_query = table.select().where(condition)
+                        if include_relations and relation_names:
+                            select_query = select_query.with_relations(*relation_names)
                         
                         if 'columns' in route:
                             cols = [getattr(table, c) for c in route['columns'] if hasattr(table, c)]
@@ -704,6 +709,8 @@ class AutoRouter:
         
         # USA O MÉTODO OTIMIZADO DO CONTROLLER (com cache de 60s)
         select_query = table.paginate(page=page, limit=limit, where=where_condition)
+        if include_relations and relation_names:
+            select_query = select_query.with_relations(*relation_names)
         select_query.execute()
         if include_relations and relation_names:
             # Relations recursivas quando relations=true
@@ -865,7 +872,10 @@ class AutoRouter:
             offset = (page - 1) * batch_size
             
             # Fetch batch
-            table.paginate(page=page, limit=batch_size, where=where_condition).execute()
+            select_query = table.paginate(page=page, limit=batch_size, where=where_condition)
+            if include_relations and relation_names:
+                select_query = select_query.with_relations(*relation_names)
+            select_query.execute()
             
             # Relations (se requisitado)
             if include_relations and relation_names and table.records:
@@ -1215,7 +1225,7 @@ class AutoRouter:
                     # Filtra os records da relation que pertencem a este record
                     filtered_records = [
                         rec for rec in relation_manager.records 
-                        if rec.get(target_field_name) == source_value
+                        if (rec.get(target_field_name) if isinstance(rec, dict) else getattr(rec, target_field_name, None)) == source_value
                     ]
                     
                     if filtered_records:
