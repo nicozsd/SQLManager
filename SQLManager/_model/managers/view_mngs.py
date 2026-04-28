@@ -36,11 +36,7 @@ class View_Manager:
 
     def _update_views(_model):
         '''Atualiza Views baseadas no banco de dados'''        
-        query = """
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.VIEWS
-            ORDER BY TABLE_NAME
-        """
+        query = _model.get_model_views_query()
         
         views    = _model.db.doQuery(query)
         db_views = [row[0] for row in views]
@@ -107,12 +103,7 @@ class View_Manager:
         Atualiza/Cria view específica
         Returns: Dict com erro ou None se sucesso
         '''        
-        query = """
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_NAME = ?
-            ORDER BY ORDINAL_POSITION
-        """
+        query = _model.get_model_columns_query()
         
         columns = _model.db.doQuery(query, (view_name,))
         

@@ -21,6 +21,7 @@ parser.add_argument("--server", help="Servidor do banco de dados", type=str)
 parser.add_argument("--database", help="Banco de dados", type=str)
 parser.add_argument("--user", help="Usuário do banco de dados", type=str)
 parser.add_argument("--password", help="Senha do banco de dados", type=str)
+parser.add_argument("--db_type", help="Tipo do banco de dados (ex: 'mysql' ou 'sqlserver')", type=str)
 parser.add_argument("--driver", help="Driver ODBC para SQL Server (ex: 'ODBC Driver 17 for SQL Server')", type=str)
 args = parser.parse_args()
 
@@ -57,7 +58,8 @@ if(dotenv is not None):
         db_database = os.getenv('DB_DATABASE'),
         db_user     = os.getenv('DB_USER'),
         db_password = os.getenv('DB_PASSWORD'),
-        db_driver   = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
+        db_driver   = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server'),
+        db_type     = os.getenv('DB_TYPE', 'sqlserver')
     )
 else:
     CoreConfig.configure(
@@ -65,7 +67,8 @@ else:
         db_database = args.database,
         db_user     = args.user,
         db_password = args.password,
-        db_driver   = args.driver or 'ODBC Driver 17 for SQL Server'
+        db_driver   = args.driver or 'ODBC Driver 17 for SQL Server',
+        db_type     = args.db_type or 'sqlserver'
     )
 
 if(CoreConfig.is_configured()):

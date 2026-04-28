@@ -49,5 +49,7 @@ class ControllerBase(DialectMixin):
     def get_table_index_query(self) -> str: pass
     @abstractmethod
     def get_table_foreign_keys_query(self) -> str: pass
+    @abstractmethod
+    def format_table_ddl(self, content: str) -> str: pass
 
 __all__ = ["DialectMixin", "ControllerBase"]

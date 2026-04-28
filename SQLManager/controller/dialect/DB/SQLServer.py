@@ -63,3 +63,26 @@ class SQLServerMixin(DialectMixin, dialect="sqlserver"):
             FROM sys.foreign_keys fk INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id INNER JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
             WHERE tp.name = {self.get_parameter_marker()} OR tr.name = {self.get_parameter_marker()}
         """
+
+    def get_model_tables_query(self) -> str:
+        return """
+            SELECT TABLE_NAME 
+            FROM INFORMATION_SCHEMA.TABLES 
+            WHERE TABLE_TYPE = 'BASE TABLE'
+            ORDER BY TABLE_NAME
+        """
+
+    def get_model_views_query(self) -> str:
+        return "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS ORDER BY TABLE_NAME"
+
+    def get_model_columns_query(self) -> str:
+        return f"""
+            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = {self.get_parameter_marker()}
+            ORDER BY ORDINAL_POSITION
+        """
+
+    def format_table_ddl(self, content: str) -> str:
+        # Remove espaços vazios, quebras de linha e a vírgula do final da string
+        return content.strip().rstrip(',')

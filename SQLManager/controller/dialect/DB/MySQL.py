@@ -62,3 +62,34 @@ class MySQLMixin(DialectMixin, dialect="mysql"):
             FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
             WHERE REFERENCED_TABLE_NAME IS NOT NULL AND (TABLE_NAME = {self.get_parameter_marker()} OR REFERENCED_TABLE_NAME = {self.get_parameter_marker()})
         """
+
+    def get_model_tables_query(self) -> str:
+        return """
+            SELECT TABLE_NAME 
+            FROM INFORMATION_SCHEMA.TABLES 
+            WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = DATABASE()
+            ORDER BY TABLE_NAME
+        """
+
+    def get_model_views_query(self) -> str:
+        return "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME"
+
+    def get_model_columns_query(self) -> str:
+        return f"""
+            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = {self.get_parameter_marker()}
+            ORDER BY ORDINAL_POSITION
+        """
+
+    def format_table_ddl(self, content: str) -> str:
+        content = content.replace('[', '').replace(']', '')
+        content = content.replace('IDENTITY(1,1)', 'AUTO_INCREMENT PRIMARY KEY')
+        content = content.replace('nvarchar', 'VARCHAR')
+        content = content.replace('varchar', 'VARCHAR')
+        content = content.replace('bit', 'BOOLEAN')
+        content = content.replace('SYSDATETIME()', 'CURRENT_TIMESTAMP')
+        content = content.replace('GETDATE()', 'CURRENT_TIMESTAMP')
+        
+        # Remove espaços vazios, quebras de linha e a vírgula do final da string
+        return content.strip().rstrip(',')

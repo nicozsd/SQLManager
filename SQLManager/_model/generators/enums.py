@@ -60,4 +60,30 @@ class SequenceTypes(BaseEnumController.Enum):
     NUMERIC         : Self = (3, "Numeric")
 '''
 #[END CODE] Project: SQLManager / Issue #2 / made by: {Heitor Rolim} / created: {06/03/2026}
+,
+    "DBType": '''
+from typing import Self
+from SQLManager import BaseEnumController
+
+class DBType(BaseEnumController.Enum):
+    """
+    Enumeração de tipos de banco de dados suportados pelo sistema.
+    """
+    SQLSERVER : Self = ("SQLSERVER", "SQL Server (SSMS)")
+    MYSQL     : Self = ("MYSQL",     "MySQL")
+
+    @classmethod
+    def from_string(cls, value: str) -> Self:
+        if not value:
+            return cls.SQLSERVER
+            
+        val_upper = str(value).strip().upper()
+        if val_upper == "MYSQL":
+            return cls.MYSQL
+            
+        if val_upper != "SQLSERVER":
+            print(f"[SQLManager] Aviso: Dialeto '{value}' não suportado. Usando SQLSERVER como padrão.")
+            
+        return cls.SQLSERVER
+'''
 }
