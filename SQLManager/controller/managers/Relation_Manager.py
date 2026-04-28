@@ -1,5 +1,7 @@
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
 
+import inspect
+import types
 from typing    import TYPE_CHECKING, Optional, Union, List, Dict, Any
 from ..EDTController import EDTController
 from ..BaseEnumController import BaseEnumController
@@ -103,9 +105,39 @@ class RelationManager:
             TableController: Instância da tabela relacionada
         '''
         if self.ref_table is None:
-            self.ref_table = self.ref_table_class(self.database)
+            ref_class = self.ref_table_class
+            if isinstance(ref_class, types.ModuleType):
+                resolved = self._resolve_table_class_from_module(ref_class)
+                if resolved is None:
+                    raise TypeError(f"Relation ref_table_class is a module ({ref_class.__name__}) and no TableController class could be resolved")
+                self.ref_table_class = resolved
+                ref_class = resolved
+            self.ref_table = ref_class(self.database)
         return self.ref_table
-    
+
+    def _resolve_table_class_from_module(self, module):
+        '''
+        Resolve uma classe de TableController a partir de um módulo, se necessário.
+        '''
+        from ..TableController import TableController
+
+        # Tenta usar __all__ se disponível
+        if hasattr(module, '__all__'):
+            for name in module.__all__:
+                attr = getattr(module, name, None)
+                if inspect.isclass(attr) and issubclass(attr, TableController):
+                    return attr
+
+        # Busca a primeira classe pública que herda de TableController
+        for name in dir(module):
+            if name.startswith('_'):
+                continue
+            attr = getattr(module, name, None)
+            if inspect.isclass(attr) and issubclass(attr, TableController):
+                return attr
+
+        return None
+
     def clear(self):
         '''Limpa os records da relation'''
         self.records = []
