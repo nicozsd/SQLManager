@@ -62,13 +62,13 @@ class UpdateManager:
                 if old_val == new_val:
                     continue
 
-            set_clauses.append(f"{key} = ?")
+            set_clauses.append(f"{key} = {controller.get_parameter_marker()}")
             values.append(new_val)
         
         if not values:
             raise Exception("Nenhum campo foi alterado para atualizar.")
         
-        query = f"UPDATE {controller.table_name} SET " + ", ".join(set_clauses) + " WHERE RECID = ?"
+        query = f"UPDATE {controller.table_name} SET " + ", ".join(set_clauses) + f" WHERE RECID = {controller.get_parameter_marker()}"
         values.append(controller._get_field_instance('RECID').value)
         
         try:
@@ -115,13 +115,13 @@ class UpdateManager:
                 raise Exception(f"Campo '{field_name}' não existe na tabela {controller.table_name}")
             set_values[field_name] = field_val
         
-        set_clauses = [f"{field} = ?" for field in set_values.keys()]
+        set_clauses = [f"{field} = {controller.get_parameter_marker()}" for field in set_values.keys()]
         query       = f"UPDATE {controller.table_name} SET " + ", ".join(set_clauses)
         values      = list(set_values.values())                
 
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
         if where is not None:
-            where_sql, where_values = where.to_sql()
+            where_sql, where_values = where.to_sql(controller.get_parameter_marker())
             query += f" WHERE {where_sql}"
             values.extend(where_values if isinstance(where_values, list) else [where_values])
         

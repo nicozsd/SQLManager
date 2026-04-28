@@ -202,14 +202,17 @@ class database_connection (_TTS_Manager, _Consult_Manager):
             user     = _User     or config.get('user')
             password = _Password or config.get('password')
             driver   = config.get('driver')
+            self.db_type = config.get('DB_TYPE') or config.get('db_type') or os.getenv('DB_TYPE', 'sqlserver')
         else:
             server   = _Server   or os.getenv('DB_SERVER')
             database = _Database or os.getenv('DB_DATABASE')
             user     = _User     or os.getenv('DB_USER')
             password = _Password or os.getenv('DB_PASSWORD')
             driver   = _Driver   or os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server')
-            
-        self.db_type = config.get('DB_TYPE', 'sqlserver')
+            self.db_type = os.getenv('DB_TYPE', 'sqlserver')
+
+        # Normaliza para minúsculo (ex: MySQL -> mysql) para bater com as verificações
+        self.db_type = self.db_type.lower()
 
         self.db_params = {
             'server': server,

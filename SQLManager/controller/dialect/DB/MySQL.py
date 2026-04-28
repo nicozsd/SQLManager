@@ -38,3 +38,27 @@ class MySQLMixin(DialectMixin, dialect="mysql"):
     def get_parameter_marker(self) -> str:
         # Drivers PyMySQL/mysql-connector usa "%s"
         return "%s"
+
+    def format_insert_query(self, table_name: str, fields: list) -> str:
+        markers = ", ".join(["%s"] * len(fields))
+        return f"INSERT INTO {table_name} ({', '.join(fields)}) VALUES ({markers})"
+
+    def execute_insert_and_get_id(self, trs, query: str, values: tuple) -> int:
+        cursor = trs.connection.cursor()
+        cursor.execute(query, values)
+        last_id = cursor.lastrowid
+        cursor.close()
+        return last_id
+
+    def get_columns_with_defaults_query(self) -> str:
+        return f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = {self.get_parameter_marker()} AND COLUMN_DEFAULT IS NOT NULL"
+
+    def get_table_index_query(self) -> str:
+        return f"SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = {self.get_parameter_marker()}"
+
+    def get_table_foreign_keys_query(self) -> str:
+        return f"""
+            SELECT CONSTRAINT_NAME AS f_key, TABLE_NAME AS t_origin, COLUMN_NAME AS c_origin, REFERENCED_TABLE_NAME AS t_reference, REFERENCED_COLUMN_NAME AS c_reference
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+            WHERE REFERENCED_TABLE_NAME IS NOT NULL AND (TABLE_NAME = {self.get_parameter_marker()} OR REFERENCED_TABLE_NAME = {self.get_parameter_marker()})
+        """

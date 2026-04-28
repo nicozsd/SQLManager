@@ -165,7 +165,7 @@ class InsertRecordsetManager:
     
     def _insert_all(self) -> int:
         """Insere todos os registros sem filtro usando bulk insert otimizado"""
-        placeholders = ', '.join(['?'] * len(self._columns))
+        placeholders = ', '.join([self._controller.get_parameter_marker()] * len(self._columns))
         query = f"INSERT INTO {self._controller.table_name} ({', '.join(self._columns)}) VALUES ({placeholders})"
         
         with self._controller.db.transaction() as trs:
@@ -185,7 +185,7 @@ class InsertRecordsetManager:
         existing_keys = set()
         for i in range(0, len(input_keys), batch_size):
             batch_keys      = input_keys[i:i + batch_size]
-            placeholders    = ', '.join(['?'] * len(batch_keys))
+            placeholders    = ', '.join([self._controller.get_parameter_marker()] * len(batch_keys))
             check_query     = f"SELECT {self._key_column} FROM {self._controller.table_name} WHERE {self._key_column} IN ({placeholders})"
             existing_result = self._controller.db.doQuery(check_query, tuple(batch_keys))
 
@@ -197,7 +197,7 @@ class InsertRecordsetManager:
         if not new_data:
             return 0
             
-        placeholders = ', '.join(['?'] * len(self._columns))
+        placeholders = ', '.join([self._controller.get_parameter_marker()] * len(self._columns))
         query        = f"INSERT INTO {self._controller.table_name} ({', '.join(self._columns)}) VALUES ({placeholders})"
 
         with self._controller.db.transaction() as trs:
@@ -277,13 +277,12 @@ class InsertManager:
         if not fields:
             raise Exception("Nenhum campo para inserir")
         
-        query = f"INSERT INTO {controller.table_name} (" + ", ".join(fields) + ") OUTPUT INSERTED.RECID VALUES (" + ", ".join(['?'] * len(fields)) + ")"
+        query = controller.format_insert_query(controller.table_name, fields)
         
         try:
             ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
             with controller.db.transaction() as trs:            
-                result    = trs.doQuery(query, tuple(values))            
-                new_recid = int(result[0][0]) if result and result[0][0] else None            
+                new_recid = controller.execute_insert_and_get_id(trs, query, tuple(values))
             ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
             if new_recid is not None:

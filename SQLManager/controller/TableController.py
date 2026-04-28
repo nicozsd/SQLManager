@@ -175,7 +175,10 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
         - Se houver query pendente, executa antes de retornar o campo
         '''
         
-        if name in self.protected_attr() or name.startswith('_'):
+        if name == 'protected_attr' or name.startswith('_'):
+            return object.__getattribute__(self, name)
+            
+        if name in self.protected_attr():
             return object.__getattribute__(self, name)
         
         # Se estiver acessando um campo e houver wrapper pendente, executa
@@ -204,7 +207,11 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
     def __setattr__(self, name: str, value: Any):
         '''Intercepta atribuições para validar EDT/Enum'''
-        if name in self.protected_attr() or name.startswith('_'):
+        if name == 'protected_attr' or name.startswith('_'):
+            object.__setattr__(self, name, value)
+            return
+            
+        if name in self.protected_attr():
             object.__setattr__(self, name, value)
             return
 
@@ -377,12 +384,7 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
             return TableController._defaults_cache[self.source_name]
             ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         
-        query = f"""
-        SELECT c.name
-        FROM sys.columns c
-        INNER JOIN sys.tables t ON c.object_id = t.object_id
-        WHERE t.name = ? AND c.default_object_id > 0
-        """
+        query = self.get_columns_with_defaults_query()
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         defaults_result = self.db.doQuery(query, (self.source_name,))
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
@@ -405,7 +407,7 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
         if self.Indexes:
             return self.Indexes
         
-        query = f"SELECT name FROM sys.indexes WHERE object_id = OBJECT_ID(?)"   
+        query = self.get_table_index_query()
 
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''     
         rows  = self.db.doQuery(query, (self.source_name,))
@@ -424,21 +426,7 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
         if self.ForeignKeys:
             return self.ForeignKeys
         
-        query = '''
-            SELECT
-                fk.name AS f_key,
-                tp.name AS t_origin,
-                cp.name AS c_origin,
-                tr.name AS t_reference,
-                cr.name AS c_reference
-            FROM sys.foreign_keys fk
-            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-            INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
-            INNER JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
-            INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
-            INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
-            WHERE tp.name = ? OR tr.name = ?
-        '''
+        query = self.get_table_foreign_keys_query()
 
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         rows = self.db.doQuery(query, (self.source_name, self.source_name))
@@ -520,7 +508,7 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
                 return cached_count
         
         # Executa COUNT(*) direto no banco
-        query = f"SELECT COUNT(*) FROM [{self.source_name}]"
+        query = f"SELECT COUNT(*) FROM {self.source_name}"
         params = []
         
         if where:

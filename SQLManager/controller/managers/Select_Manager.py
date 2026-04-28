@@ -367,7 +367,7 @@ class SelectManager:
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         
         if self._where_conditions is not None:
-            where_sql, where_values = self._where_conditions.to_sql()
+            where_sql, where_values = self._where_conditions.to_sql(self._controller.get_parameter_marker())
             query += f" WHERE {where_sql}"
             values.extend(where_values if isinstance(where_values, list) else [where_values])
         
@@ -380,7 +380,7 @@ class SelectManager:
 
             for h in self._having_conditions:
                 operator = h.get('operator', '=')
-                having_clauses.append(f"{h['field']} {operator} ?")
+                having_clauses.append(f"{h['field']} {operator} {self._controller.get_parameter_marker()}")
                 values.append(h['value'])
 
             query += " HAVING " + " AND ".join(having_clauses)
@@ -395,7 +395,7 @@ class SelectManager:
         
         # Aplica LIMIT/OFFSET se definido (SQL Server: OFFSET/FETCH)
         if self._limit is not None and self._limit > 0:
-            query += f" OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY"
+            query += self._controller.format_pagination(limit, offset)
         
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
         # Executa a query usando o método apropriado do banco
@@ -606,7 +606,7 @@ class JoinBuilder:
         other_alias = alias or self.other_table.source_name
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
         
-        on_sql, _ = condition.to_sql()
+        on_sql, _ = condition.to_sql(self.select_manager._controller.get_parameter_marker())
         
         self.select_manager._joins.append({
             'controller': self.other_table,
@@ -614,7 +614,7 @@ class JoinBuilder:
             'type':       self.join_type.upper(),
             'columns':    columns,
             'alias':      other_alias,
-            'index_hint': index_hint
+            'index_hint': self.select_manager._controller.format_index_hint(index_hint) if index_hint else ""
         })
         
         return self.select_manager
