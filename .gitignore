@@ -6,7 +6,8 @@ __pycache__/
 .env
 .vscode/
 
-# SQLManager - Build Ofuscado (NÃO commitar)
+# SQLManager - Build Ofuscado
+# Mantém arquivos compilados (.pyd e .so) para ofuscação
 build/
 dist/
 *.egg-info/
@@ -16,8 +17,8 @@ dist/
 .venv_test/
 obfuscated_build/
 
-# C extensions
-*.so
+# Arquivos .c gerados pelo Cython (não versionar - são gerados no build)
+*.c
 
 # Distribution / packaging
 .Python

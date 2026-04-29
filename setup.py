@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from setuptools import setup, find_packages, Extension
 
@@ -13,11 +14,13 @@ PACKAGE_DIR = BASE_DIR / PACKAGE_NAME
 
 
 def discover_extensions(package_dir: Path):
+    """Descobre todos os arquivos .py para compilar com Cython (exclui testes e __init__.py)"""
     extensions = []
 
     for path in package_dir.rglob("*.py"):
         relative_path = path.relative_to(BASE_DIR)
 
+        # Pula __init__.py e arquivos de teste
         if path.name == "__init__.py":
             continue
 
@@ -35,6 +38,24 @@ def discover_extensions(package_dir: Path):
         )
 
     return extensions
+
+
+def get_compiled_package_data(package_dir: Path):
+    """
+    Retorna dicionário de package_data para arquivos compilados (.pyd/.so).
+    Inclui também .pyi stub files se existirem.
+    """
+    package_data = {}
+
+    for path in package_dir.rglob("*"):
+        if path.is_file() and path.suffix in (".pyd", ".so", ".pyi"):
+            rel_path = path.relative_to(package_dir)
+            package_name = ".".join(rel_path.parts[:-1]) if rel_path.parent != Path(".") else PACKAGE_NAME
+            if package_name not in package_data:
+                package_data[package_name] = []
+            package_data[package_name].append(str(rel_path.name))
+
+    return package_data
 
 
 ext_modules = cythonize(
@@ -60,15 +81,7 @@ setup(
         exclude=[f"{PACKAGE_NAME}.tests", f"{PACKAGE_NAME}.tests.*"],
     ),
     include_package_data=True,
-    package_data={
-        PACKAGE_NAME: [
-            "_model/*.py",
-            "EDTs/*.py",
-            "enum/*.py",
-            "tables/*.py",
-            "views/*.py",
-        ]
-    },
+    package_data=get_compiled_package_data(PACKAGE_DIR),
     python_requires=">=3.10",
     install_requires=[
         "pyodbc>=4.0.0",
