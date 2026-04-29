@@ -27,7 +27,7 @@ def main():
     
     # 1. Limpar builds anteriores
     print("[1/3] Limpando builds anteriores...")
-    for dir_to_clean in [dist_dir, build_dir, base_dir / 'SQLManager.egg-info']:
+    for dir_to_clean in [dist_dir, build_dir, base_dir / 'SQLManager.egg-info', obfuscated_dir]:
         if dir_to_clean.exists():
             shutil.rmtree(dir_to_clean)
     
@@ -43,7 +43,7 @@ def main():
     # pyarmor gen -O <saida> -r <entrada>
     pyarmor_cmd = [
         pyarmor_path, "gen", 
-        "-O", str(obfuscated_dir / "SQLManager"), 
+        "-O", str(obfuscated_dir), 
         "-r", 
         "SQLManager"
     ]
@@ -68,11 +68,23 @@ def main():
         if src_file.exists():
             shutil.copy2(src_file, obfuscated_dir / file_name)
             
+    # 3.1 Atualiza o setup.py copiado para incluir a dependência do PyArmor no pacote
+    setup_path = obfuscated_dir / 'setup.py'
+    if setup_path.exists():
+        with open(setup_path, 'r', encoding='utf-8') as f:
+            setup_content = f.read()
+        
+        # A forma mais robusta é remover o 'include' para que find_packages() encontre
+        # tanto 'SQLManager' quanto 'pyarmor_runtime_*' automaticamente.
+        setup_content = setup_content.replace('find_packages(include=["SQLManager", "SQLManager.*"])', 'find_packages()')
+        with open(setup_path, 'w', encoding='utf-8') as f:
+            f.write(setup_content)
+
     print("  [OK] Arquivos de configuração copiados.")
     
     # 4. Automático: Chamar o pip install do pacote recém-ofuscado
     print("\n[4/4] Instalando pacote ofuscado localmente (pip install)...")
-    pip_install_cmd = [sys.executable, "-m", "pip", "install", ".", "--force-reinstall"]
+    pip_install_cmd = [sys.executable, "-m", "pip", "install", ".", "--force-reinstall", "--no-cache-dir"]
     
     install_result = subprocess.run(pip_install_cmd, cwd=obfuscated_dir, capture_output=True, text=True)
     if install_result.returncode == 0:
