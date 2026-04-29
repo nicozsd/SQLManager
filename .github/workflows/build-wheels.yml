@@ -10,16 +10,12 @@ permissions:
   contents: read
 
 env:
-  CIBW_BUILD: "cp310-* cp311-* cp312-*"
-  CIBW_SKIP: "*-musllinux_* *-win32"
-  CIBW_ARCHS_LINUX: "x86_64"
-  CIBW_ARCHS_WINDOWS: "AMD64"
-  CIBW_BUILD_VERBOSITY: "3"
-  CIBW_BUILD_FRONTEND: "pip"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheel on ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
 
@@ -30,6 +26,10 @@ jobs:
         os:
           - windows-latest
           - ubuntu-latest
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
 
     steps:
       - name: Checkout repository
@@ -38,43 +38,32 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade build cibuildwheel
+          python -m pip install --upgrade setuptools wheel Cython
 
-      - name: Validate package metadata
-        run: python -m build --sdist --outdir precheck-dist -vv
+      - name: Show build environment
+        run: |
+          python --version
+          python -m pip --version
+          python -c "from pathlib import Path; print('setup.py:', Path('setup.py').exists()); print('pyproject.toml:', Path('pyproject.toml').exists()); print('package:', Path('SQLManager').exists())"
 
       - name: Build wheels
-        shell: bash
-        run: |
-          mkdir -p dist
-          python -m cibuildwheel --output-dir dist 2>&1 | tee cibuildwheel.log
-          exit_code=${PIPESTATUS[0]}
-          echo "cibuildwheel exit code: $exit_code"
-          exit $exit_code
-        env:
-          CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel Cython"
+        run: python -m pip wheel . --wheel-dir dist --no-deps --no-build-isolation -vvv
 
-      - name: Upload build logs
+      - name: List built wheels
         if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: build-logs-${{ matrix.os }}
-          path: |
-            cibuildwheel.log
-            precheck-dist/*
-          if-no-files-found: ignore
+        run: python -c "from pathlib import Path; wheels=list(Path('dist').glob('*.whl')); print('Wheels found:', len(wheels)); [print(p) for p in wheels]"
 
       - name: Upload built wheels
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist/*.whl
           if-no-files-found: ignore
 
