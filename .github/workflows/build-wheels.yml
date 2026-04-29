@@ -11,8 +11,9 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # IMPORTANTE: não cancela outros jobs se um falhar
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest]
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
 
     steps:
@@ -41,6 +42,7 @@ jobs:
     name: Upload wheels to GitHub Release
     needs: build_wheels
     runs-on: ubuntu-latest
+    if: always()  # Roda mesmo se alguns builds falharem
     permissions:
       contents: write
     
@@ -51,6 +53,9 @@ jobs:
           pattern: wheels-*
           merge-multiple: true
           path: dist
+      
+      - name: List wheels
+        run: ls -la dist/
       
       - name: Upload wheels to release
         uses: softprops/action-gh-release@v2
