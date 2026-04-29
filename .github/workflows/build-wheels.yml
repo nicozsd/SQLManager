@@ -14,7 +14,8 @@ env:
   CIBW_SKIP: "*-musllinux_* *-win32"
   CIBW_ARCHS_LINUX: "x86_64"
   CIBW_ARCHS_WINDOWS: "AMD64"
-  CIBW_BUILD_VERBOSITY: "1"
+  CIBW_BUILD_VERBOSITY: "3"
+  CIBW_BUILD_FRONTEND: "pip"
 
 jobs:
   build_wheels:
@@ -45,11 +46,29 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --upgrade build cibuildwheel
 
+      - name: Validate package metadata
+        run: python -m build --sdist --outdir precheck-dist -vv
+
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir dist
+        shell: bash
+        run: |
+          mkdir -p dist
+          python -m cibuildwheel --output-dir dist 2>&1 | tee cibuildwheel.log
+          exit_code=${PIPESTATUS[0]}
+          echo "cibuildwheel exit code: $exit_code"
+          exit $exit_code
         env:
-          CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel Cython build"
-          CIBW_BUILD_VERBOSITY: "3"
+          CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel Cython"
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: build-logs-${{ matrix.os }}
+          path: |
+            cibuildwheel.log
+            precheck-dist/*
+          if-no-files-found: ignore
 
       - name: Upload built wheels
         if: always()
