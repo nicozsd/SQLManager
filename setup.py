@@ -26,7 +26,11 @@ def discover_extensions(package_dir: Path):
 
 ext_modules = cythonize(
     discover_extensions(PACKAGE_DIR),
-    compiler_directives={"language_level": "3"},
+    compiler_directives={
+        "language_level": "3",
+        "binding": True,
+    },
+    annotate=False,
 )
 
 
