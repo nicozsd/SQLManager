@@ -1,10 +1,10 @@
 """
-Script para criar wheel ofuscado do SQLManager para distribuição.
+Script para preparar o pacote ofuscado do SQLManager via PyArmor.
 
 Uso:
     python build_wheel_obfuscated.py
 
-Gera: dist/sqlmanager-4.2.2-py3-none-any.whl (ofuscado)
+Gera: dist/obfuscated_package/ (código fonte ofuscado pronto para pip install)
 """
 
 import os
@@ -18,12 +18,10 @@ def main():
     base_dir = Path(__file__).parent
     dist_dir = base_dir / 'dist'
     build_dir = base_dir / 'build'
-    
-    # Verifica variável de ambiente para desabilitar ofuscação
-    skip_obfuscate = os.getenv('OBFUSCATE_BUILD', '1') == '0'
+    obfuscated_dir = dist_dir / 'obfuscated_package'
     
     print("="*60)
-    print("SQLManager - Build Wheel" + (" (SEM ofuscação)" if skip_obfuscate else " Ofuscado"))
+    print("SQLManager - Build Ofuscado com PyArmor")
     print("="*60)
     print()
     
@@ -33,123 +31,72 @@ def main():
         if dir_to_clean.exists():
             shutil.rmtree(dir_to_clean)
     
-    # 2. Criar wheel
-    print("\n[2/3] Criando wheel...")
-    result = subprocess.run(
-        [sys.executable, "-m", "build", "--wheel"],
-        cwd=base_dir,
-        capture_output=True,
-        text=True
-    )
+    # 2. Ofuscar com PyArmor
+    print("\n[2/3] Ofuscando código fonte com PyArmor...")
     
+    pyarmor_path = shutil.which("pyarmor")
+    if not pyarmor_path:
+        print("[ERRO] Comando 'pyarmor' não encontrado no PATH.")
+        print("[DICA] Instale a biblioteca com: pip install pyarmor")
+        return 1
+
+    # pyarmor gen -O <saida> -r <entrada>
+    pyarmor_cmd = [
+        pyarmor_path, "gen", 
+        "-O", str(obfuscated_dir / "SQLManager"), 
+        "-r", 
+        "SQLManager"
+    ]
+    
+    result = subprocess.run(pyarmor_cmd, cwd=base_dir, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"[ERRO] Erro ao criar wheel:")
-        print(result.stderr)
-        print("\n[DICA] Instale build: pip install build")
+        print(f"[ERRO] Falha ao ofuscar com PyArmor:")
+        print(result.stderr or result.stdout)
         return 1
+        
+    print("  [OK] Código ofuscado com sucesso via PyArmor!")
     
-    # 3. Encontrar o wheel gerado
-    print("\n[3/3] Localizando wheel gerado...")
-    wheels = list(dist_dir.glob("*.whl"))
-    if not wheels:
-        print("[ERRO] Nenhum wheel encontrado em dist/")
-        return 1
+    # 3. Preparar diretório para instalação
+    print("\n[3/3] Preparando pacote para instalação...")
     
-    wheel_file = wheels[0]
-    print(f"[OK] Encontrado: {wheel_file.name}")
+    obfuscated_dir.mkdir(parents=True, exist_ok=True)
     
-    # 4. Ofuscação (OPCIONAL - desabilitado por padrão)
-    if not skip_obfuscate:
-        print("\n[EXTRA] Ofuscando wheel...")
-        try:
-            import zipfile
-            extract_dir = build_dir / "wheel_extracted"
-            extract_dir.mkdir(parents=True, exist_ok=True)
+    # Copia arquivos essenciais para a pasta gerada, para que o pip install funcione nela
+    files_to_copy = ['setup.py', 'README.md', 'requirements.txt.example']
+    for file_name in files_to_copy:
+        src_file = base_dir / file_name
+        if src_file.exists():
+            shutil.copy2(src_file, obfuscated_dir / file_name)
             
-            with zipfile.ZipFile(wheel_file, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-            
-            sqlmanager_dir = extract_dir / "SQLManager"
-            if sqlmanager_dir.exists():
-                count = ofuscate_directory(sqlmanager_dir)
-                print(f"  [OK] {count} arquivos ofuscados")
-            
-            wheel_file.unlink()
-            
-            with zipfile.ZipFile(wheel_file, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
-                for root, dirs, files in os.walk(extract_dir):
-                    for file in files:
-                        file_path = Path(root) / file
-                        arcname = file_path.relative_to(extract_dir)
-                        zip_ref.write(file_path, arcname)
-        except Exception as e:
-            print(f"  [AVISO] Erro na ofuscação: {e}")
-            print("  Criando wheel SEM ofuscação...")
+    print("  [OK] Arquivos de configuração copiados.")
     
+    # 4. Automático: Chamar o pip install do pacote recém-ofuscado
+    print("\n[4/4] Instalando pacote ofuscado localmente (pip install)...")
+    pip_install_cmd = [sys.executable, "-m", "pip", "install", ".", "--force-reinstall"]
+    
+    install_result = subprocess.run(pip_install_cmd, cwd=obfuscated_dir, capture_output=True, text=True)
+    if install_result.returncode == 0:
+        print("  [OK] Instalação concluída com sucesso no seu ambiente!")
+    else:
+        print("  [AVISO] Erro ao instalar via pip:")
+        print(install_result.stderr)
+
     print()
     print("="*60)
-    print(f"[SUCESSO] Wheel criado com sucesso!")
-    print(f"Arquivo: {wheel_file}")
+    print(f"[SUCESSO] Pacote ofuscado criado com sucesso!")
+    print(f"Diretório pronto: {obfuscated_dir}")
     print("="*60)
     print()
-    print("Para instalar:")
-    print(f"  pip install {wheel_file}")
-    print("  OU")
-    print(f"  pip install git+https://github.com/nicozsd/SQLManager.git")
+    print("COMO DISTRIBUIR PARA SEUS CLIENTES DE FORMA SEGURA:")
+    print("1. No terminal, entre na pasta gerada:  cd dist/obfuscated_package")
+    print("2. Inicie o git e suba para uma branch separada chamada 'release':")
+    print("   git init && git add . && git commit -m 'Deploy ofuscado'")
+    print("   git push -f git@github.com:Avalon-Tecnologia/SQLManager.git HEAD:release")
+    print("\n3. O cliente vai instalar baixando direto dessa branch ofuscada:")
+    print("   pip install git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@release")
     print()
     
     return 0
-
-def ofuscate_directory(directory: Path) -> int:
-    """
-    Ofusca todos os arquivos .py no diretório.
-    Retorna número de arquivos processados.
-    """
-    count = 0
-    import py_compile
-    
-    for root, dirs, files in os.walk(directory):
-        # Ignorar __pycache__
-        dirs[:] = [d for d in dirs if d != '__pycache__']
-        
-        for file in files:
-            if file.endswith('.py'):
-                file_path = Path(root) / file
-                
-                try:
-                    # Remove comentários
-                    content = remove_comments_safe(file_path)
-                    
-                    # Escreve versão ofuscada
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    
-                    # Compila para bytecode otimizado
-                    py_compile.compile(str(file_path), optimize=2, doraise=True)
-                    
-                    count += 1
-                    
-                except Exception as e:
-                    print(f"  [AVISO] Erro em {file}: {e}")
-    
-    return count
-
-def remove_comments_safe(filepath: Path) -> str:
-    """Remove apenas linhas de comentário completas (começam com #)."""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    
-    result = []
-    for line in lines:
-        stripped = line.lstrip()
-        # Remove apenas linhas que são 100% comentário
-        if stripped.startswith('#') and not stripped.startswith('#!'):
-            continue
-        result.append(line)
-    
-    # Header
-    header = "# SQLManager - Codigo Ofuscado v4.2.2\n# Avalon Tecnologia (C) 2026\n\n"
-    return header + ''.join(result)
 
 if __name__ == '__main__':
     sys.exit(main())
