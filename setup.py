@@ -14,13 +14,19 @@ PACKAGE_DIR = BASE_DIR / PACKAGE_NAME
 
 def discover_extensions(package_dir: Path):
     extensions = []
+
     for path in package_dir.rglob("*.py"):
+        relative_parts = path.relative_to(BASE_DIR).parts
+
         if path.name == "__init__.py":
             continue
-        if "tests" in path.parts:
+
+        if "tests" in relative_parts:
             continue
+
         module_name = ".".join(path.relative_to(BASE_DIR).with_suffix("").parts)
         extensions.append(Extension(module_name, [str(path)]))
+
     return extensions
 
 
@@ -42,7 +48,10 @@ setup(
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
     url="https://github.com/Avalon-Tecnologia/SQLManager",
-    packages=find_packages(include=[PACKAGE_NAME, f"{PACKAGE_NAME}.*"]),
+    packages=find_packages(
+    include=[PACKAGE_NAME, f"{PACKAGE_NAME}.*"],
+        exclude=[f"{PACKAGE_NAME}.tests", f"{PACKAGE_NAME}.tests.*"],
+    ),
     include_package_data=True,
     package_data={
         PACKAGE_NAME: [
