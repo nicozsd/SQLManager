@@ -435,24 +435,24 @@ class AutoRouter:
         table_config = _table_config if _table_config else {}
         
         try:
-            match method.upper():
-                case "GET":            
-                    return self._handle_get(table, path_parts, query_params, table_config)
-                case "POST":
-                    return self._handle_post(table, body)
-                case "PATCH":
-                    if not path_parts:
-                        return {"status": 400, "error": "Missing ID for PATCH"}
-                
-                    return self._handle_patch(table, path_parts[0], body)
-                case "DELETE":
+            ref_method = method.upper()                        
 
-                    if not path_parts:
-                        return {"status": 400, "error": "Missing ID for DELETE"}
+            if(ref_method == "GET"):                          
+                return self._handle_get(table, path_parts, query_params, table_config)
+            elif(ref_method == "POST"):            
+                return self._handle_post(table, body)
+            elif(ref_method == "PATCH"):                
+                if not path_parts:
+                    return {"status": 400, "error": "Missing ID for PATCH"}
                 
-                    return self._handle_delete(table, path_parts[0], table_config)
-                case _:
-                    return {"status": 405, "error": "Method not supported"}
+                return self._handle_patch(table, path_parts[0], body)
+            elif(ref_method == "DELETE"):
+                if not path_parts:
+                    return {"status": 400, "error": "Missing ID for DELETE"}
+                
+                return self._handle_delete(table, path_parts[0], table_config)
+            else:
+                return {"status": 405, "error": "Method not supported"}
         except Exception as e:                        
             print(f"{SystemController.custom_text("HANDLE_REQUEST", 'red')}\n{e}")
             traceback.print_exc()
@@ -694,14 +694,22 @@ class AutoRouter:
                     
                     # Aplica operador específico
                     condition = None
-                    match operator:
-                        case 'eq':   condition = (field_attr == value)
-                        case 'gt':   condition = (field_attr > value)
-                        case 'gte':  condition = (field_attr >= value)
-                        case 'lt':   condition = (field_attr < value)
-                        case 'lte':  condition = (field_attr <= value)
-                        case 'neq':  condition = (field_attr != value)
-                        case 'like': condition = field_attr.like(str(value))
+                    if(operator == 'in'):
+                        condition = field_attr.in_(value.split(','))                      
+                    elif operator == 'like':
+                        condition = field_attr.like(str(value))
+                    elif operator == 'neq':
+                        condition = (field_attr != value)
+                    elif operator == 'eq':
+                        condition = (field_attr == value)
+                    elif operator == 'gt':
+                        condition = (field_attr > value)
+                    elif operator == 'gte':
+                        condition = (field_attr >= value)
+                    elif operator == 'lt':
+                        condition = (field_attr < value)
+                    elif operator == 'lte':
+                        condition = (field_attr <= value)                    
                     
                     # Combina múltiplos filtros com AND
                     if condition is not None:
@@ -816,15 +824,23 @@ class AutoRouter:
                     pass
                 
                 condition = None
-                match operator:
-                    case 'eq':   condition = (field_attr == value)
-                    case 'gt':   condition = (field_attr > value)
-                    case 'gte':  condition = (field_attr >= value)
-                    case 'lt':   condition = (field_attr < value)
-                    case 'lte':  condition = (field_attr <= value)
-                    case 'neq':  condition = (field_attr != value)
-                    case 'like': condition = field_attr.like(str(value))
-                    case 'in':   condition = field_attr.in_(value.split(','))
+
+                if(operator == 'in'):
+                    condition = field_attr.in_(value.split(','))                      
+                elif operator == 'like':
+                    condition = field_attr.like(str(value))
+                elif operator == 'neq':
+                    condition = (field_attr != value)
+                elif operator == 'eq':
+                    condition = (field_attr == value)
+                elif operator == 'gt':
+                    condition = (field_attr > value)
+                elif operator == 'gte':
+                    condition = (field_attr >= value)
+                elif operator == 'lt':
+                    condition = (field_attr < value)
+                elif operator == 'lte':
+                    condition = (field_attr <= value)
                 
                 # Combina múltiplos filtros com AND
                 if condition is not None:

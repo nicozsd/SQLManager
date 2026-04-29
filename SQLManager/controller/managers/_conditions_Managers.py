@@ -30,41 +30,53 @@ class FieldCondition:
             return True  # Se não temos valor do campo, assume True
         
         left  = self.left_value
-        right = self.value
+        right = self.value        
         
-        match self.operator:
-            case '=':
-                return left == right            
-            case '==':
-                return left == right            
-            case '!=':
-                return left != right
-            case '<':
-                return left < right
-            case '<=':
-                return left <= right        
-            case '>':
-                return left > right
-            case '>=':
-                return left >= right
-            case 'IS':
-                return left is right
-            case 'IS NOT':
-                return left is not right
-            case 'IN':
-                return left in right
-            case 'NOT IN':
-                return left not in right
-            case 'LIKE':
-                import re
-                pattern = str(right).replace('%', '.*').replace('_', '.')
-                return bool(re.match(pattern, str(left)))
-            case 'NOT LIKE':
-                import re
-                pattern = str(right).replace('%', '.*').replace('_', '.')
-                return not bool(re.match(pattern, str(left)))
-            case _:
-                return True  # Operador desconhecido, assume True para evitar falhas                    
+        if self.operator == '=':
+            return left == right
+
+        elif self.operator == '==':
+            return left == right
+
+        elif self.operator == '!=':
+            return left != right
+
+        elif self.operator == '<':
+            return left < right
+
+        elif self.operator == '<=':
+            return left <= right
+
+        elif self.operator == '>':
+            return left > right
+
+        elif self.operator == '>=':
+            return left >= right
+
+        elif self.operator == 'IS':
+            return left is right
+
+        elif self.operator == 'IS NOT':
+            return left is not right
+
+        elif self.operator == 'IN':
+            return left in right
+
+        elif self.operator == 'NOT IN':
+            return left not in right
+
+        elif self.operator == 'LIKE':
+            import re
+            pattern = str(right).replace('%', '.*').replace('_', '.')
+            return bool(re.match(pattern, str(left)))
+
+        elif self.operator == 'NOT LIKE':
+            import re
+            pattern = str(right).replace('%', '.*').replace('_', '.')
+            return not bool(re.match(pattern, str(left)))
+
+        else:
+            return True  # Operador desconhecido, assume True para evitar falhas                    
     
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
     def to_sql(self) -> tuple:
