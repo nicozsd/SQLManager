@@ -29,6 +29,7 @@ ext_modules = cythonize(
     compiler_directives={
         "language_level": "3",
         "binding": True,
+        "annotation_typing": False
     },
     annotate=False,
 )
