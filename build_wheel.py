@@ -83,8 +83,10 @@ def build_wheel(base_dir: Path, keep_py: bool = False):
     print("[BUILD] Gerando wheel com Cython...")
     print("=" * 60)
 
+    # Força re-leitura do package structure após remover .py
+    # Isso garante que o setuptools não veja os .py removidos
     subprocess.run(
-        [sys.executable, "-m", "build", "--wheel"],
+        [sys.executable, "-m", "build", "--wheel", "--no-isolation"],
         check=True,
         cwd=base_dir
     )

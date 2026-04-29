@@ -21,4 +21,5 @@ dependencies = [
 websocket = ["flask-socketio>=5.0.0"]
 
 [tool.setuptools]
-packages = ["SQLManager"]
+# A lista de pacotes é definida dinamicamente no setup.py
+# para incluir apenas módulos compilados (.pyd/.so)

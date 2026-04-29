@@ -1,0 +1,13 @@
+# Inclui arquivos compilados (.pyd para Windows, .so para Linux)
+include *.pyd
+recursive-include SQLManager *.pyd
+recursive-include SQLManager *.so
+
+# Exclui arquivos .py do pacote (exceto __init__.py e testes)
+recursive-exclude SQLManager *.py
+recursive-include SQLManager __init__.py
+recursive-include SQLManager/tests *.py
+
+# Exclui diretórios de build
+recursive-exclude build *
+prune build

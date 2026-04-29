@@ -1,7 +1,7 @@
 from pathlib import Path
 import os
 
-from setuptools import setup, find_packages, Extension
+from setuptools import setup, Extension
 
 try:
     from Cython.Build import cythonize
@@ -58,6 +58,37 @@ def get_compiled_package_data(package_dir: Path):
     return package_data
 
 
+def get_package_modules(package_dir: Path, base_dir: Path):
+    """
+    Retorna lista de módulos do pacote baseados nos arquivos compilados (.pyd/.so).
+    Isso substitui find_packages() para evitar incluir .py não compilados.
+    """
+    modules = set()
+    modules.add(PACKAGE_NAME)  # Sempre inclui o pacote principal
+
+    for path in package_dir.rglob("*.pyd"):
+        rel_path = path.relative_to(package_dir)
+        # Converte caminho do arquivo compilado para nome do módulo
+        module_parts = list(rel_path.parts[:-1])  # Remove .pyd
+        if module_parts:
+            modules.add(f"{PACKAGE_NAME}.{'.'.join(module_parts)}")
+
+    for path in package_dir.rglob("*.so"):
+        rel_path = path.relative_to(package_dir)
+        module_parts = list(rel_path.parts[:-1])  # Remove .so
+        if module_parts:
+            modules.add(f"{PACKAGE_NAME}.{'.'.join(module_parts)}")
+
+    # Também descobre subpacotes por diretórios com __init__.py
+    for init_py in package_dir.rglob("__init__.py"):
+        rel_path = init_py.relative_to(package_dir).parent
+        if rel_path != Path("."):
+            module_parts = list(rel_path.parts)
+            modules.add(f"{PACKAGE_NAME}.{'.'.join(module_parts)}")
+
+    return sorted(modules)
+
+
 ext_modules = cythonize(
     discover_extensions(PACKAGE_DIR),
     compiler_directives={
@@ -76,10 +107,7 @@ setup(
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
     url="https://github.com/Avalon-Tecnologia/SQLManager",
-    packages=find_packages(
-        include=[PACKAGE_NAME, f"{PACKAGE_NAME}.*"],
-        exclude=[f"{PACKAGE_NAME}.tests", f"{PACKAGE_NAME}.tests.*"],
-    ),
+    packages=get_package_modules(PACKAGE_DIR, BASE_DIR),
     include_package_data=True,
     package_data=get_compiled_package_data(PACKAGE_DIR),
     python_requires=">=3.10",
