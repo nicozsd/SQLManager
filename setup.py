@@ -16,16 +16,23 @@ def discover_extensions(package_dir: Path):
     extensions = []
 
     for path in package_dir.rglob("*.py"):
-        relative_parts = path.relative_to(BASE_DIR).parts
+        relative_path = path.relative_to(BASE_DIR)
 
         if path.name == "__init__.py":
             continue
 
-        if "tests" in relative_parts:
+        if "tests" in relative_path.parts:
             continue
 
-        module_name = ".".join(path.relative_to(BASE_DIR).with_suffix("").parts)
-        extensions.append(Extension(module_name, [str(path)]))
+        module_name = ".".join(relative_path.with_suffix("").parts)
+        source_path = relative_path.as_posix()
+
+        extensions.append(
+            Extension(
+                module_name,
+                [source_path],
+            )
+        )
 
     return extensions
 
@@ -35,7 +42,7 @@ ext_modules = cythonize(
     compiler_directives={
         "language_level": "3",
         "binding": True,
-        "annotation_typing": False
+        "annotation_typing": False,
     },
     annotate=False,
 )
@@ -49,7 +56,7 @@ setup(
     author_email="nicolas.santos@avalontecnologia.com.br",
     url="https://github.com/Avalon-Tecnologia/SQLManager",
     packages=find_packages(
-    include=[PACKAGE_NAME, f"{PACKAGE_NAME}.*"],
+        include=[PACKAGE_NAME, f"{PACKAGE_NAME}.*"],
         exclude=[f"{PACKAGE_NAME}.tests", f"{PACKAGE_NAME}.tests.*"],
     ),
     include_package_data=True,
@@ -62,13 +69,13 @@ setup(
             "views/*.py",
         ]
     },
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     install_requires=[
         "pyodbc>=4.0.0",
         "python-dotenv>=0.19.0",
     ],
     extras_require={
-        'websocket': ['flask-socketio>=5.0.0'],
+        "websocket": ["flask-socketio>=5.0.0"],
     },
     ext_modules=ext_modules,
     zip_safe=False,
