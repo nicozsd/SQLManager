@@ -37,7 +37,7 @@ ext_modules = cythonize(
 
 setup(
     name="SQLManager",
-    version="4.2.2",
+    version="4.2.3",
     description="Sistema para gerenciamento de banco de dados e validações",
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
