@@ -37,11 +37,12 @@ jobs:
           name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist/*.whl
 
-  create_release:
-    name: Create GitHub Release
+  upload_to_release:
+    name: Upload wheels to GitHub Release
     needs: build_wheels
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     
     steps:
       - name: Download all wheels
@@ -51,10 +52,9 @@ jobs:
           merge-multiple: true
           path: dist
       
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Upload wheels to release
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*.whl
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
