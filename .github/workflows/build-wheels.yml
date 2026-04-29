@@ -3,63 +3,96 @@ name: Build and Release Wheels
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CIBW_BUILD: "cp310-* cp311-* cp312-*"
+  CIBW_SKIP: "*-musllinux_* *-win32"
+  CIBW_ARCHS_LINUX: "x86_64"
+  CIBW_ARCHS_WINDOWS: "AMD64"
+  CIBW_BUILD_VERBOSITY: "1"
 
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
     strategy:
-      fail-fast: false  # IMPORTANTE: não cancela outros jobs se um falhar
+      fail-fast: false
+      max-parallel: 2
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+        os:
+          - windows-latest
+          - ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install dependencies
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install build wheel Cython setuptools
-      
-      - name: Build wheel
-        run: python -m build --wheel
-      
-      - name: Upload wheels
+          python -m pip install --upgrade cibuildwheel
+
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir dist
+        env:
+          CIBW_BEFORE_BUILD: "python -m pip install --upgrade pip setuptools wheel Cython"
+
+      - name: Upload built wheels
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: wheels-${{ matrix.os }}
           path: dist/*.whl
+          if-no-files-found: ignore
 
   upload_to_release:
     name: Upload wheels to GitHub Release
     needs: build_wheels
     runs-on: ubuntu-latest
-    if: always()  # Roda mesmo se alguns builds falharem
+    if: always() && startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
-    
+
     steps:
       - name: Download all wheels
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: wheels-*
           merge-multiple: true
           path: dist
-      
-      - name: List wheels
-        run: ls -la dist/
-      
+
+      - name: Check generated wheels
+        id: wheels
+        shell: bash
+        run: |
+          mkdir -p dist
+          count=$(find dist -name "*.whl" -type f | wc -l | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Wheels found: $count"
+          find dist -name "*.whl" -type f -print
+
       - name: Upload wheels to release
+        if: steps.wheels.outputs.count != '0'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.whl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip release upload when no wheels were built
+        if: steps.wheels.outputs.count == '0'
+        run: echo "No wheels were built, so nothing will be uploaded to the release."
