@@ -68,7 +68,7 @@ class DeleteRecordsetManager:
         if self._where_conditions is None:
             raise Exception("DELETE sem WHERE não é permitido. Use where=True explicitamente se desejar deletar tudo.")
         
-        where_sql, where_values = self._where_conditions.to_sql()
+        where_sql, where_values = self._where_conditions.to_sql(self._controller.get_parameter_marker())
         query += f" WHERE {where_sql}"
         values.extend(where_values if isinstance(where_values, list) else [where_values])        
                 
@@ -112,7 +112,7 @@ class DeleteManager:
         Returns:
             bool: True se excluído com sucesso
         """
-        query = f"DELETE FROM {controller.table_name} WHERE RECID = ?"
+        query = f"DELETE FROM {controller.table_name} WHERE RECID = {controller.get_parameter_marker()}"
         
         try:
             with controller.db.transaction() as trs:            

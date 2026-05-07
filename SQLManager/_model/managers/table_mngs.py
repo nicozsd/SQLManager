@@ -36,12 +36,7 @@ class Table_Manager:
 
     def _update_tables(_model):
         '''Atualiza Tables baseadas no banco de dados'''        
-        query = """
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE'
-            ORDER BY TABLE_NAME
-        """
+        query = _model.get_model_tables_query()
         
         tables = _model.db.doQuery(query)
         db_tables = [row[0] for row in tables]
@@ -108,12 +103,7 @@ class Table_Manager:
         Atualiza/Cria tabela específica
         Returns: Dict com erro ou None se sucesso
         '''        
-        query = """
-            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_NAME = ?
-            ORDER BY ORDINAL_POSITION
-        """
+        query = _model.get_model_columns_query()
         
         columns = _model.db.doQuery(query, (table_name,))
         

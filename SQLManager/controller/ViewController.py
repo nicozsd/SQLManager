@@ -6,8 +6,9 @@ from .EDTController      import EDTController
 from .BaseEnumController import BaseEnumController
 
 from .managers           import *
+from .dialect            import ControllerBase
 
-class ViewController:
+class ViewController(ControllerBase):
     '''
     Classe de Controle de Views do banco de dados (SQL Server).
 
@@ -185,7 +186,7 @@ class ViewController:
             return self.Columns
         
         try:
-            query = f"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?"
+            query = self.table_Columns()
             rows = self.db.doQuery(query, (self.source_name,))
             self.Columns = [[row[0], row[1], row[2]] for row in rows]
         except:
@@ -211,12 +212,7 @@ class ViewController:
         if self.source_name in ViewController._defaults_cache:
             return ViewController._defaults_cache[self.source_name]
         
-        query = f"""
-        SELECT c.name
-        FROM sys.columns c
-        INNER JOIN sys.tables t ON c.object_id = t.object_id
-        WHERE t.name = ? AND c.default_object_id > 0
-        """
+        query = self.get_columns_with_defaults_query()
         defaults_result      = self.db.doQuery(query, (self.source_name,))
         columns_with_default = set(row[0] for row in defaults_result) if defaults_result else set()
         
@@ -233,7 +229,7 @@ class ViewController:
         if self.Indexes:
             return self.Indexes
         
-        query = f"SELECT name FROM sys.indexes WHERE object_id = OBJECT_ID(?)"        
+        query = self.get_table_index_query()        
         rows  = self.db.doQuery(query, (self.source_name,))
 
         self.Indexes = [row[0] for row in rows]
@@ -249,21 +245,7 @@ class ViewController:
         if self.ForeignKeys:
             return self.ForeignKeys
         
-        query = '''
-            SELECT
-                fk.name AS f_key,
-                tp.name AS t_origin,
-                cp.name AS c_origin,
-                tr.name AS t_reference,
-                cr.name AS c_reference
-            FROM sys.foreign_keys fk
-            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-            INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
-            INNER JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
-            INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
-            INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
-            WHERE tp.name = ? OR tr.name = ?
-        '''
+        query = self.get_table_foreign_keys_query()
         rows = self.db.doQuery(query, (self.source_name, self.source_name))
 
         self.ForeignKeys = [
@@ -317,7 +299,7 @@ class ViewController:
                 return cached_count
         
         # Executa COUNT(*) direto no banco
-        query = f"SELECT COUNT(*) FROM [{self.source_name}]"
+        query = f"SELECT COUNT(*) FROM {self.source_name}"
         params = []
         
         if where:

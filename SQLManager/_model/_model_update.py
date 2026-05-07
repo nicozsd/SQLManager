@@ -8,8 +8,27 @@ Lê banco de dados e sincroniza com aplicação, gerando __init__.py automaticam
 '''
 
 from . import *
+from SQLManager.controller.dialect import DialectMixin
+import os
 
-class ModelUpdater:
+class ModelUpdaterBase(DialectMixin):
+    def __new__(cls, *args, **kwargs):
+        from SQLManager import CoreConfig
+        dialect_name = CoreConfig.get_db_config().get('type', 'sqlserver').lower()
+        mixin_cls = DialectMixin.resolve(dialect_name)
+        
+        if not mixin_cls:
+            mixin_cls = DialectMixin.resolve('sqlserver')
+            
+        if mixin_cls in cls.__mro__:
+            return object.__new__(cls)
+            
+        dynamic_name = f"{cls.__name__}_{dialect_name}"
+        dynamic_cls = type(dynamic_name, (mixin_cls, cls), {})
+        
+        return object.__new__(dynamic_cls)
+
+class ModelUpdater(ModelUpdaterBase):
     '''Atualização automática de modelos'''
 
     @staticmethod
@@ -26,16 +45,15 @@ class ModelUpdater:
         """Garante a criação de uma nova tabela no banco de dados caso não exista"""
         if not name:
             return
-        query = """
-            SELECT TABLE_NAME 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE'
-            ORDER BY TABLE_NAME
-        """
+        query = self.get_model_tables_query()
         
         tables = self.db.doQuery(query)
-        db_tables = [row[0] for row in tables]
-        if name not in db_tables:
+        db_tables_lower = [row[0].lower() for row in tables]
+        if name.lower() not in db_tables_lower:
+            
+            # Adaptação on-the-fly de DDL utilizando a arquitetura de Dialetos
+            content = self.format_table_ddl(content)
+
             query = f"""
             CREATE TABLE {name} ({content})
             """
@@ -152,13 +170,43 @@ class ModelUpdater:
             print(f"\n{SystemController().custom_text('ATENÇÃO', 'red', is_bold=True)}")
             print(f"Tabelas não existentes no banco serão {SystemController().custom_text('REMOVIDAS', 'red', is_bold=True)}.")
             print(f"Faça {SystemController().custom_text('BACKUP', 'yellow', is_bold=True)} de src/model/tables antes de continuar.")
-            print(f"\nContinuar? ({SystemController().custom_text('y', 'green')}/{SystemController().custom_text('n', 'red')})")
-
-            resposta = input().strip().lower()
-
-            if resposta != "y":
-                print("Cancelado.")
-                return
+            
+            ui_resposta = None
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                
+                root = tk._default_root
+                is_temp_root = False
+                if root is None:
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.attributes('-topmost', True)
+                    is_temp_root = True
+                    
+                ui_resposta = messagebox.askyesno(
+                    "Aviso de Segurança - SQLManager",
+                    "ATENÇÃO!\n\n"
+                    "Tabelas não existentes no banco de dados serão REMOVIDAS.\n"
+                    "Faça BACKUP da pasta 'src/model/tables' antes de continuar.\n\n"
+                    "Deseja continuar com a atualização?",
+                    icon='warning'
+                )
+                
+                if is_temp_root:
+                    root.destroy()
+            except Exception:
+                pass # Falha ao abrir UI, segue para o fallback de terminal
+                
+            if ui_resposta is None:
+                print(f"\nContinuar? ({SystemController().custom_text('y', 'green')}/{SystemController().custom_text('n', 'red')})")
+                resposta = input().strip().lower()
+                if resposta != "y":
+                    print("Cancelado pelo usuário.")
+                    raise Exception("Atualização cancelada pelo usuário.")
+            elif ui_resposta is False:
+                print("Cancelado pelo usuário.")
+                raise Exception("Atualização cancelada pelo usuário.")
 
         try:            
             utils.stepInfo("00", "Limpando arquivos __init__.py")
@@ -219,7 +267,21 @@ class ModelUpdater:
             raise
    
 if __name__ == "__main__":
-    updater = ModelUpdater().run()    
+    import sys
+    
+    # Se o usuário passou parâmetros na linha de comando (CLI), roda direto no terminal
+    if len(sys.argv) > 1:
+        updater = ModelUpdater().run()
+    else:
+        try:
+            # Tenta carregar a Janela de Interface Gráfica
+            from SQLManager._model.dialog.run import dialog
+            app_dialog = dialog("Model Update")
+            app_dialog.start()
+        except Exception as e:
+            # Fallback seguro para servidores sem interface (Headless / SSH)
+            print(f"\n[SQLManager] Interface gráfica indisponível ({e}). Iniciando via terminal...\n")
+            updater = ModelUpdater().run()
 
 ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
 

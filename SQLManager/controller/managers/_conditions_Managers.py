@@ -67,7 +67,7 @@ class FieldCondition:
                 return True  # Operador desconhecido, assume True para evitar falhas                    
     
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
-    def to_sql(self) -> tuple:
+    def to_sql(self, parameter_marker: str = "?") -> tuple:
         '''Converte a condição para SQL'''
         prefix = f"{self.table_alias}." if self.table_alias else ""
                 
@@ -83,11 +83,11 @@ class FieldCondition:
                 sql = "1=0" if self.operator == 'IN' else "1=1"
                 return (sql, [])
             
-            placeholders = ', '.join(['?' for _ in self.value])
+            placeholders = ', '.join([parameter_marker for _ in self.value])
             sql = f"{prefix}{self.field_name} {self.operator} ({placeholders})"
             return (sql, list(self.value))
                 
-        sql = f"{prefix}{self.field_name} {self.operator} ?"
+        sql = f"{prefix}{self.field_name} {self.operator} {parameter_marker}"
         return (sql, self.value)
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
 
@@ -106,10 +106,10 @@ class BinaryExpression:
     def __or__(self, other: Union[FieldCondition, 'BinaryExpression']) -> 'BinaryExpression':
         return BinaryExpression(self, 'OR', other)
     
-    def to_sql(self) -> tuple:
+    def to_sql(self, parameter_marker: str = "?") -> tuple:
         '''Converte a expressão para SQL recursivamente'''
-        left_sql, left_val   = self.left.to_sql()
-        right_sql, right_val = self.right.to_sql()
+        left_sql, left_val   = self.left.to_sql(parameter_marker)
+        right_sql, right_val = self.right.to_sql(parameter_marker)
         
         left_values  = left_val if isinstance(left_val, list) else [left_val]
         right_values = right_val if isinstance(right_val, list) else [right_val]
