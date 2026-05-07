@@ -14,11 +14,11 @@ if root_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from UI.db_selector import DBSelector
-from UI.info_panel import InfoPanel
-from UI.action_button import ActionButton
-from UI.dashboard import MetadataDashboard
-from UI.button_modelupdate import Button_modelupdate
+from .UI.db_selector import DBSelector
+from .UI.info_panel import InfoPanel
+from .UI.action_button import ActionButton
+from .UI.dashboard import MetadataDashboard
+from .UI.button_modelupdate import Button_modelupdate
 
 class dialog:
     """
