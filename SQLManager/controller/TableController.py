@@ -5,10 +5,53 @@ from ..connection        import database_connection as data, Transaction
 from .EDTController      import EDTController
 from .BaseEnumController import BaseEnumController
 from .managers._conditions_Managers import FieldCondition, BinaryExpression
-from .managers           import SelectManager, InsertManager, UpdateManager, DeleteManager, InsertRecordsetWrapper, DeleteRecordsetManager
+
+''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+from .managers           import SelectManager, InsertManager, UpdateManager, DeleteManager, InsertRecordsetWrapper, DeleteRecordsetManager, RelationManager
+''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+
 from .SystemController   import SystemController
 
-class TableController():
+from .dialect            import ControllerBase
+from abc                 import ABCMeta
+
+# Registry global de campos por classe (para acesso via ClassName.FIELD)
+_TABLE_FIELD_REGISTRY: Dict[str, Dict[str, 'EDTController']] = {}
+
+class TableControllerMeta(ABCMeta):
+    '''Metaclass para permitir acesso a campos via ClassName.FIELD'''
+    
+    def __getattr__(cls, name: str):
+        '''Permite acessar campos da classe sem criar instância'''
+        class_name = cls.__name__
+        
+        if class_name in _TABLE_FIELD_REGISTRY:
+            if name in _TABLE_FIELD_REGISTRY[class_name]:
+                return _TABLE_FIELD_REGISTRY[class_name][name]
+        
+        try:
+            class DummyDB:
+                def transaction(self):
+                    return self
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+                def doQuery(self, query, params):
+                    return []  # Retorna lista vazia para queries
+                        
+            dummy_instance = cls(DummyDB())            
+            
+            if class_name in _TABLE_FIELD_REGISTRY:                
+                if name in _TABLE_FIELD_REGISTRY[class_name]:                    
+                    return _TABLE_FIELD_REGISTRY[class_name][name]                                    
+        except Exception as e:            
+            import traceback            
+            traceback.print_exc()
+        
+        raise AttributeError(f"'{class_name}' não possui atributo '{name}'")
+
+class TableController(ControllerBase, metaclass=TableControllerMeta):
     """
     Classe de controle de tabelas do banco de dados (SQL Server) - REFATORADA
     
@@ -42,19 +85,24 @@ class TableController():
     
     # Cache estático de colunas com DEFAULT por tabela
     _defaults_cache: Dict[str, set] = {}
+    # Cache estático para COUNT(*) com TTL de 60 segundos
+    _count_cache: Dict[str, tuple] = {}  # {cache_key: (timestamp, count)}
+    _count_cache_ttl: int = 60
     
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
-    def __init__(self, db: Union[data, Transaction], source_name: Optional[str] = None):
+    def __init__(self, db: Union[data, Transaction], source_name: Optional[str] = None, table_name: Optional[str] = None):
         '''
         Inicializa o controlador de tabela.
         Args:
             db (Union[data, Transaction]): Instância de conexão ou transação.
             source_name (str): Nome da tabela ou view no banco de dados.
+            table_name (str): [DEPRECATED] Use source_name. Mantido para retrocompatibilidade.
         '''
         #SelectManager.__init__(self, self)
         
-        self.db         = db
-        self.source_name = (source_name or self.__class__.__name__).upper()
+        self.db          = db
+        # Retrocompatibilidade: aceita table_name como fallback
+        self.source_name = (source_name or table_name or self.__class__.__name__).upper()
 
         self.records:     List[Dict[str, Any]]           = []
         self.Columns:     Optional[List[List[Any]]]      = None
@@ -64,7 +112,48 @@ class TableController():
         self.isUpdate = False
         self._pending_wrapper = None  # Rastreia wrapper pendente de execução
 
-        self.__select_manager = SelectManager(self) 
+        self.__select_manager = SelectManager(self)
+        
+        # Registra os campos da classe para acesso via ClassName.FIELD
+        self._register_class_fields() 
+
+    def _register_class_fields(self):
+        '''Registra os campos desta instância no registry de classe'''
+        class_name = self.__class__.__name__
+        
+        # Sempre cria/atualiza o registry (não apenas na primeira vez)
+        if class_name not in _TABLE_FIELD_REGISTRY:
+            _TABLE_FIELD_REGISTRY[class_name] = {}
+        
+        # Se já tem campos registrados, não precisa re-registrar
+        if _TABLE_FIELD_REGISTRY[class_name]:
+            return
+            
+        # Percorre apenas os atributos de instância (não métodos herdados)
+        for attr_name, attr in self.__dict__.items():
+            if attr_name.startswith('_'):
+                continue
+                
+            try:
+                if isinstance(attr, (EDTController, BaseEnumController)):
+                    # Cria uma cópia do campo para o registry de classe
+                    if isinstance(attr, EDTController):
+                        field_copy = EDTController(attr.type_name, attr.data_type)
+                    else:
+                        field_copy = attr.__class__()
+                    
+                    field_copy._field_name = attr_name
+                    field_copy._table_name = self.source_name
+                    field_copy._table_alias = self.source_name
+                    
+                    _TABLE_FIELD_REGISTRY[class_name][attr_name] = field_copy
+                    
+                    # Define como atributo de classe
+                    setattr(self.__class__, attr_name, field_copy)
+            except Exception as e:                
+                print(f"Erro ao registrar campo {attr_name} de {class_name}: {e}")
+                import traceback
+                traceback.print_exc()
 
     @property
     def table_name(self) -> str:
@@ -85,20 +174,11 @@ class TableController():
         - Em contexto normal: retorna o VALOR
         - Se houver query pendente, executa antes de retornar o campo
         '''
-        protected_attrs = {
-            'db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
-            '_where_conditions', '_columns', '_joins', '_order_by', '_limit',
-            '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
-            'controller', '__class__', '__dict__', 'isUpdate', '_pending_wrapper',
-            '__select_manager', 'field', 'select', 'insert', 'update', 'delete',
-            'insert_recordset', 'update_recordset', 'delete_from', 'set_current',
-            'clear', 'validate_fields', 'validate_write', 'get_table_columns',
-            'get_columns_with_defaults', 'get_table_index', 'get_table_foreign_keys',
-            'get_table_total', 'exists', '_get_field_instance', '_is_aggregate_function',
-            '_extract_field_from_aggregate', 'SelectForUpdate'
-        }
         
-        if name in protected_attrs or name.startswith('_'):
+        if name == 'protected_attr' or name.startswith('_'):
+            return object.__getattribute__(self, name)
+            
+        if name in self.protected_attr():
             return object.__getattribute__(self, name)
         
         # Se estiver acessando um campo e houver wrapper pendente, executa
@@ -127,10 +207,10 @@ class TableController():
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
     def __setattr__(self, name: str, value: Any):
         '''Intercepta atribuições para validar EDT/Enum'''
-        if name in ('db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
+        if name in ('db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
                     '_where_conditions', '_columns', '_joins', '_order_by', '_limit', 
                     '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
-                    'controller', '_pending_wrapper', '__select_manager', 'isUpdate'):
+                    'controller', '_pending_wrapper', '__select_manager'):
             object.__setattr__(self, name, value)
             return
 
@@ -244,7 +324,7 @@ class TableController():
         Returns:
             bool: True se for uma função de agregação
         '''
-        aggregate_functions = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'GROUP_CONCAT', 'STRING_AGG']
+        aggregate_functions = self.aggr_functions()
         column_upper = column.upper().strip()
         return any(func in column_upper for func in aggregate_functions)
 
@@ -277,7 +357,7 @@ class TableController():
             return self.Columns
         
         try:
-            query = f"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?"
+            query = self.table_Columns()
             rows = self.db.doQuery(query, (self.source_name,))
             self.Columns = [[row[0], row[1], row[2]] for row in rows]
         except:
@@ -306,12 +386,7 @@ class TableController():
             return TableController._defaults_cache[self.source_name]
             ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         
-        query = f"""
-        SELECT c.name
-        FROM sys.columns c
-        INNER JOIN sys.tables t ON c.object_id = t.object_id
-        WHERE t.name = ? AND c.default_object_id > 0
-        """
+        query = self.get_columns_with_defaults_query()
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         defaults_result = self.db.doQuery(query, (self.source_name,))
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
@@ -334,7 +409,7 @@ class TableController():
         if self.Indexes:
             return self.Indexes
         
-        query = f"SELECT name FROM sys.indexes WHERE object_id = OBJECT_ID(?)"   
+        query = self.get_table_index_query()
 
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''     
         rows  = self.db.doQuery(query, (self.source_name,))
@@ -353,21 +428,7 @@ class TableController():
         if self.ForeignKeys:
             return self.ForeignKeys
         
-        query = '''
-            SELECT
-                fk.name AS f_key,
-                tp.name AS t_origin,
-                cp.name AS c_origin,
-                tr.name AS t_reference,
-                cr.name AS c_reference
-            FROM sys.foreign_keys fk
-            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-            INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
-            INNER JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
-            INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
-            INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
-            WHERE tp.name = ? OR tr.name = ?
-        '''
+        query = self.get_table_foreign_keys_query()
 
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         rows = self.db.doQuery(query, (self.source_name, self.source_name))
@@ -417,6 +478,81 @@ class TableController():
             bool: True se existir pelo menos um registro, False caso contrário.
         '''
         return self._check_exists(where)
+    
+    def count(self, where: Optional[Union[FieldCondition, BinaryExpression]] = None, use_cache: bool = True) -> int:
+        '''
+        Executa COUNT(*) diretamente no banco de dados (não carrega registros).
+        Otimizado para performance com cache de 60 segundos.
+        
+        Args:
+            where: Condição WHERE opcional usando operadores sobrecarregados
+                   Ex: tabela.CAMPO == 5
+            use_cache: Se True, usa cache de 60 segundos para o resultado
+        
+        Returns:
+            int: Total de registros que atendem à condição
+        
+        Exemplo:
+            total = tabela.count()  # COUNT(*) de toda tabela
+            ativos = tabela.count(where=tabela.ATIVO == True)  # COUNT com filtro
+        '''
+        import time
+        import hashlib
+        
+        # Gera chave de cache baseada na tabela e condição WHERE
+        where_str = str(where) if where else ""
+        cache_key = f"{self.source_name}_{hashlib.md5(where_str.encode()).hexdigest()}"
+        
+        # Verifica cache
+        if use_cache and cache_key in TableController._count_cache:
+            timestamp, cached_count = TableController._count_cache[cache_key]
+            if time.time() - timestamp < TableController._count_cache_ttl:
+                return cached_count
+        
+        # Executa COUNT(*) direto no banco
+        query = f"SELECT COUNT(*) FROM {self.source_name}"
+        params = []
+        
+        if where:
+            where_clause, where_params = where.to_sql()
+            query += f" WHERE {where_clause}"
+            params = where_params
+        
+        result = self.db.doQuery(query, params)
+        count_value = result[0][0] if result else 0
+        
+        # Cacheia resultado
+        if use_cache:
+            TableController._count_cache[cache_key] = (time.time(), count_value)
+        
+        return count_value
+    
+    def paginate(self, page: int = 1, limit: int = 20, where: Optional[Union[FieldCondition, BinaryExpression]] = None):
+        '''
+        Helper para paginação automática com limit/offset.
+        
+        Args:
+            page: Número da página (1-indexed, padrão: 1)
+            limit: Registros por página (padrão: 20)
+            where: Condição WHERE opcional
+        
+        Returns:
+            SelectManager: Query configurada com paginação (auto-executa)
+        
+        Exemplo:
+            # Página 1 com 20 registros
+            tabela.paginate(page=1, limit=20)
+            
+            # Página 2 com filtro
+            tabela.paginate(page=2, limit=50, where=tabela.ATIVO == True)
+        '''
+        offset = (page - 1) * limit
+        mgr = self.select().limit(limit).offset(offset)
+        
+        if where is not None:
+            mgr = mgr.where(where)
+        
+        return mgr
 
     def validate_fields(self) -> Dict[str, Any]:
         '''
@@ -547,4 +683,22 @@ class TableController():
         
         return self    
     
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+    def new_Relation(self, ref_table_class: type) -> RelationManager:
+        '''
+        Cria uma nova instância de RelationManager para definir relações entre tabelas.
+        
+        Args:
+            ref_table_class: Classe da tabela relacionada (não a instância)
+            
+        Exemplo:
+            self.relations = {
+                "mensalities": self.new_Relation(PlanMensalities).on(self.PLANID, PlanMensalities.PLANID)
+            }
+            
+        Returns:
+            RelationManager: Nova instância para configurar relações
+        '''
+        return RelationManager(self.db, self, ref_table_class)
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
 ''' [END CODE] Project: SQLManager Version 4.0 / issue: #1 / made by: Nicolas Santos / created: 23/02/2026 '''

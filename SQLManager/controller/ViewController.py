@@ -6,24 +6,30 @@ from .EDTController      import EDTController
 from .BaseEnumController import BaseEnumController
 
 from .managers           import *
+from .dialect            import ControllerBase
 
-class ViewController:
+class ViewController(ControllerBase):
     '''
     Classe de Controle de Views do banco de dados (SQL Server).
 
     assim como a classe TableController, esta classe é responsável por gerenciar as operações relacionadas às views do banco de dados a consulta de views.
     '''
     _default_cache: Dict[str, set] = {}
+    # Cache estático para COUNT(*) com TTL de 60 segundos
+    _count_cache: Dict[str, tuple] = {}  # {cache_key: (timestamp, count)}
+    _count_cache_ttl: int = 60
 
-    def __init__(self, db: Union[data, Transaction], source_name: Optional[str] = None):
+    def __init__(self, db: Union[data, Transaction], source_name: Optional[str] = None, table_name: Optional[str] = None):
         '''
         Inicializa uma instância do ViewController.
         Args:
             db: Conexão com o banco de dados ou transação.
             source_name: Nome da view a ser gerenciada (opcional).
+            table_name: [DEPRECATED] Use source_name. Mantido para retrocompatibilidade.
         '''
         self.db        = db
-        self.source_name = (source_name or self.__class__.__name__).upper()
+        # Retrocompatibilidade: aceita table_name como fallback
+        self.source_name = (source_name or table_name or self.__class__.__name__).upper()
 
         self.records:     List[Dict[str, Any]]           = []
         self.Columns:     Optional[List[List[Any]]]      = None
@@ -33,6 +39,14 @@ class ViewController:
         self._pending_wrapper = None  # Rastreia wrapper pendente de execução
 
         self.__select_manager = SelectManager(self) 
+
+    @property
+    def table_name(self) -> str:
+        return self.source_name
+    
+    @table_name.setter
+    def table_name(self, value: str):
+        self.source_name = value
 
     def __getattribute__(self, name: str):
         '''
@@ -48,7 +62,7 @@ class ViewController:
             'controller', '__class__', '__dict__', '_pending_wrapper',
             '__select_manager', 'field', 'select','set_current',
             'clear', 'validate_fields', 'get_table_columns', 'get_columns_with_defaults', 
-            'get_table_index', 'get_table_foreign_keys', 'get_table_total', 
+            'get_table_index', 'get_table_foreign_keys', 'get_table_total', 'count', 'paginate',
             'exists', '_get_field_instance', '_is_aggregate_function', '_extract_field_from_aggregate'
         }
         
@@ -172,7 +186,7 @@ class ViewController:
             return self.Columns
         
         try:
-            query = f"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?"
+            query = self.table_Columns()
             rows = self.db.doQuery(query, (self.source_name,))
             self.Columns = [[row[0], row[1], row[2]] for row in rows]
         except:
@@ -198,12 +212,7 @@ class ViewController:
         if self.source_name in ViewController._defaults_cache:
             return ViewController._defaults_cache[self.source_name]
         
-        query = f"""
-        SELECT c.name
-        FROM sys.columns c
-        INNER JOIN sys.tables t ON c.object_id = t.object_id
-        WHERE t.name = ? AND c.default_object_id > 0
-        """
+        query = self.get_columns_with_defaults_query()
         defaults_result      = self.db.doQuery(query, (self.source_name,))
         columns_with_default = set(row[0] for row in defaults_result) if defaults_result else set()
         
@@ -220,7 +229,7 @@ class ViewController:
         if self.Indexes:
             return self.Indexes
         
-        query = f"SELECT name FROM sys.indexes WHERE object_id = OBJECT_ID(?)"        
+        query = self.get_table_index_query()        
         rows  = self.db.doQuery(query, (self.source_name,))
 
         self.Indexes = [row[0] for row in rows]
@@ -236,21 +245,7 @@ class ViewController:
         if self.ForeignKeys:
             return self.ForeignKeys
         
-        query = '''
-            SELECT
-                fk.name AS f_key,
-                tp.name AS t_origin,
-                cp.name AS c_origin,
-                tr.name AS t_reference,
-                cr.name AS c_reference
-            FROM sys.foreign_keys fk
-            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-            INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
-            INNER JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
-            INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
-            INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
-            WHERE tp.name = ? OR tr.name = ?
-        '''
+        query = self.get_table_foreign_keys_query()
         rows = self.db.doQuery(query, (self.source_name, self.source_name))
 
         self.ForeignKeys = [
@@ -272,6 +267,81 @@ class ViewController:
             int: Total de registros.
         '''        
         return len(self.records)
+    
+    def count(self, where: Optional[Union[FieldCondition, BinaryExpression]] = None, use_cache: bool = True) -> int:
+        '''
+        Executa COUNT(*) diretamente no banco de dados (não carrega registros).
+        Otimizado para performance com cache de 60 segundos.
+        
+        Args:
+            where: Condição WHERE opcional usando operadores sobrecarregados
+                   Ex: view.CAMPO == 5
+            use_cache: Se True, usa cache de 60 segundos para o resultado
+        
+        Returns:
+            int: Total de registros que atendem à condição
+        
+        Exemplo:
+            total = view.count()  # COUNT(*) de toda view
+            ativos = view.count(where=view.ATIVO == True)  # COUNT com filtro
+        '''
+        import time
+        import hashlib
+        
+        # Gera chave de cache baseada na view e condição WHERE
+        where_str = str(where) if where else ""
+        cache_key = f"{self.source_name}_{hashlib.md5(where_str.encode()).hexdigest()}"
+        
+        # Verifica cache
+        if use_cache and cache_key in ViewController._count_cache:
+            timestamp, cached_count = ViewController._count_cache[cache_key]
+            if time.time() - timestamp < ViewController._count_cache_ttl:
+                return cached_count
+        
+        # Executa COUNT(*) direto no banco
+        query = f"SELECT COUNT(*) FROM {self.source_name}"
+        params = []
+        
+        if where:
+            where_clause, where_params = where.to_sql()
+            query += f" WHERE {where_clause}"
+            params = where_params
+        
+        result = self.db.doQuery(query, params)
+        count_value = result[0][0] if result else 0
+        
+        # Cacheia resultado
+        if use_cache:
+            ViewController._count_cache[cache_key] = (time.time(), count_value)
+        
+        return count_value
+    
+    def paginate(self, page: int = 1, limit: int = 20, where: Optional[Union[FieldCondition, BinaryExpression]] = None):
+        '''
+        Helper para paginação automática com limit/offset.
+        
+        Args:
+            page: Número da página (1-indexed, padrão: 1)
+            limit: Registros por página (padrão: 20)
+            where: Condição WHERE opcional
+        
+        Returns:
+            SelectManager: Query configurada com paginação (auto-executa)
+        
+        Exemplo:
+            # Página 1 com 20 registros
+            view.paginate(page=1, limit=20)
+            
+            # Página 2 com filtro
+            view.paginate(page=2, limit=50, where=view.ATIVO == True)
+        '''
+        offset = (page - 1) * limit
+        mgr = self.select().limit(limit).offset(offset)
+        
+        if where:
+            mgr = mgr.where(where)
+        
+        return mgr
     
     def validate_fields(self) -> Dict[str, Any]:
         '''

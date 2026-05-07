@@ -1,25 +1,16 @@
 # Setup para o Core como pacote instalável
 
 from setuptools import setup, find_packages
-from setuptools.command.install import install
-import os
-
-class CustomInstallCommand(install):
-    '''Atua como um start no pip install'''
-    def run(self):                        
-        install.run(self)
-        os.system("python -m SQLManager._model._model_update")
 
 setup(
     name="SQLManager",
-    version="4.0.0",
+    version="4.2.2",
     description="Sistema para gerenciamento de banco de dados e validações",
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
-    url="https://github.com/nickzsd/SQLManager",
+    url="https://github.com/Avalon-Tecnologia/SQLManager",
     packages=find_packages(include=["SQLManager", "SQLManager.*"]),
     include_package_data=True,
-    #''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
     package_data={
         "SQLManager": [
             "_model/*.py",
@@ -29,11 +20,17 @@ setup(
             "views/*.py",
         ]
     },
-    #''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
     python_requires=">=3.8",
     install_requires=[
         "pyodbc>=4.0.0",
+        "python-dotenv>=0.19.0",
+        "requests>=2.25.0", 
+        "pymysql>=1.0.0",
+        "cryptography>=3.4.0",
     ],
+    extras_require={
+        'websocket': ['flask-socketio>=5.0.0'],  # WebSocket opcional
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -42,11 +39,8 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
-    cmdclass={
-        'install': CustomInstallCommand,        
-        'force_reinstall': CustomInstallCommand,
-    },
     license="MIT",
-    license_file="LICENSE",
 )

@@ -120,7 +120,13 @@ class SelectManager:
         self._distinct:          bool                                               = False
         self._do_update:         bool                                               = True
         self._executed                                                              = False
-        self._last_results                                                          = []        
+        self._last_results                                                          = []
+        
+        ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+        # Suporte a Relations automáticas
+        self._include_relations: List[str]                                          = []  # Nomes das relations a incluir
+        self._relation_joins:    Dict[str, Any]                                     = {}  # Mapa de relation -> join info
+        ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''        
 
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
 
@@ -209,6 +215,26 @@ class SelectManager:
         self._distinct = True
         return self
     
+    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+    def with_relations(self, *relation_names: str) -> 'SelectManager':
+        '''
+        Inclui relations automáticas no SELECT via JOIN.
+        Os records das relations serão automaticamente populados.
+        
+        Args:
+            *relation_names: Nomes das relations definidas em self._controller.relations
+            
+        Exemplo:
+            table.select().with_relations("mensalities", "details").where(table.ID == 5)
+            # Após: table.relations["mensalities"].records estará populado
+        
+        Returns:
+            SelectManager: Self para encadeamento
+        '''
+        self._include_relations = list(relation_names)
+        return self
+    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+    
     def do_update(self, update: bool = True) -> 'SelectManager':
         '''Define se deve atualizar a instância com o resultado'''
         self._do_update = update
@@ -216,7 +242,7 @@ class SelectManager:
     
     def execute(self):
         """Executa a query SELECT e atualiza a instância automaticamente - Retorna o controller"""
-        if self._executed:
+        if self._executed:            
             return self._controller
         
         self._executed = True
@@ -260,7 +286,59 @@ class SelectManager:
                     select_columns.append(f"{main_alias}.{col} AS {main_alias}_{col}")                
 
         join_clauses     = []
-        join_controllers = []        
+        join_controllers = []
+        values           = []  # Inicializa antes de processar relations
+        
+        ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+        # Processa Relations automáticas primeiro
+        if self._include_relations and hasattr(self._controller, 'relations'):
+            for rel_name in self._include_relations:
+                if rel_name not in self._controller.relations:
+                    raise ValueError(f"Relation '{rel_name}' não encontrada em {self._controller.source_name}")
+                
+                relation = self._controller.relations[rel_name]
+                
+                # Verifica se a relação foi configurada (usa 'is None' pois EDT pode ser falsy)
+                if relation.source_field is None or relation.target_field is None:
+                    raise ValueError(f"Relation '{rel_name}' não configurada. Use .on(source, target)")
+                
+                # Obtém a instância da tabela relacionada
+                related_table = relation.get_instance()
+                
+                # Constrói a condição de JOIN
+                join_condition = relation.build_join_condition()
+                
+                # Adiciona às condições WHERE se a relation tem filtros
+                if relation.where_condition:
+                    # Combina com AND
+                    if self._where_conditions:
+                        self._where_conditions = self._where_conditions & relation.where_condition
+                    else:
+                        self._where_conditions = relation.where_condition
+                
+                # Registra o relacionamento para processamento posterior
+                self._relation_joins[rel_name] = {
+                    'relation': relation,
+                    'controller': related_table,
+                    'join_index': len(join_controllers)
+                }
+                
+                # Adiciona ao join normal (será processado como antes)
+                related_columns = related_table.get_table_columns()
+                related_alias   = related_table.source_name
+                
+                # Monta SELECT das colunas da tabela relacionada
+                for col in related_columns:
+                    select_columns.append(f"{related_alias}.{col[0]} AS {related_alias}_{col[0]}")
+                
+                # Constrói SQL do JOIN
+                where_sql, where_values = join_condition.to_sql()
+                values.extend(where_values)
+                
+                join_clause = f" {relation.join_type} JOIN {related_table.source_name} AS {related_alias} ON {where_sql}"
+                join_clauses.append(join_clause)
+                join_controllers.append((related_table, related_alias))
+        ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''        
 
         for join in self._joins:
             ctrl       = join['controller']
@@ -287,49 +365,58 @@ class SelectManager:
         ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
         query = f"SELECT {distinct_keyword}{', '.join(select_columns)} FROM {self._controller.source_name} AS {main_alias}" + ''.join(join_clauses)
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
-
-        values = []        
         
-        if self._where_conditions or self._where_conditions is not None:
-            where_sql, where_values = self._where_conditions.to_sql()
+        if self._where_conditions is not None:
+            where_sql, where_values = self._where_conditions.to_sql(self._controller.get_parameter_marker())
             query += f" WHERE {where_sql}"
             values.extend(where_values if isinstance(where_values, list) else [where_values])
         
-        if self._group_by or self._group_by is not None:
+        if self._group_by is not None:
             group_clauses = [f"{main_alias}.{field}" for field in self._group_by]
             query += " GROUP BY " + ", ".join(group_clauses)
         
-        if self._having_conditions or self._having_conditions is not None:
+        if self._having_conditions is not None:
             having_clauses = []
 
             for h in self._having_conditions:
                 operator = h.get('operator', '=')
-                having_clauses.append(f"{h['field']} {operator} ?")
+                having_clauses.append(f"{h['field']} {operator} {self._controller.get_parameter_marker()}")
                 values.append(h['value'])
 
             query += " HAVING " + " AND ".join(having_clauses)
         
-        if self._order_by or self._order_by is not None:
+        # ORDER BY + PAGINAÇÃO (SEMPRE aplicado se houver limit)
+        # Se não tiver ORDER BY explícito mas tiver LIMIT, usa RECID como padrão
+        if self._order_by is not None:
             query += f" ORDER BY {main_alias}.{self._order_by}"
-            query += f" OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY"
+        elif self._limit is not None and self._limit > 0:
+            # Adiciona ORDER BY automático para permitir paginação
+            query += f" ORDER BY {main_alias}.RECID"
         
+        # Aplica LIMIT/OFFSET se definido (SQL Server: OFFSET/FETCH)
+        if self._limit is not None and self._limit > 0:
+            query += self._controller.format_pagination(limit, offset)
+        
+        ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
         # Executa a query usando o método apropriado do banco
-        if hasattr(self._controller.db, 'doQuery'):
-            rows = self._controller.db.doQuery(query, tuple(values))
-        elif hasattr(self._controller.db, 'execute'):
-            result = self._controller.db.execute(query, tuple(values))
-            # Se retornar cursor, faz fetchall, senão assume que já é a lista
-            rows = result.fetchall() if hasattr(result, 'fetchall') else result
-        elif hasattr(self._controller.db, 'executeCommand'):
-            cursor = self._controller.db.executeCommand(query, tuple(values))
-            rows = cursor.fetchall() if cursor else []
-        else:
-            raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
-        
+        with self._controller.db.transaction() as trs:            
+            if hasattr(trs, 'doQuery'):
+                rows = trs.doQuery(query, tuple(values))
+            elif hasattr(trs, 'execute'):
+                result = trs.execute(query, tuple(values))
+                # Se retornar cursor, faz fetchall, senão assume que já é a lista
+                rows = result.fetchall() if hasattr(result, 'fetchall') else result
+            elif hasattr(trs, 'executeCommand'):
+                cursor = trs.executeCommand(query, tuple(values))
+                rows = cursor.fetchall() if cursor else []
+            else:
+                raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
+        ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+
         if has_aggregates or self._group_by or self._group_by is not None:
             results = self._process_aggregate_results(rows, columns, table_columns)
             join_records_map = None
-        elif self._joins:
+        elif self._joins or self._include_relations:
             ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
             results, join_records_map = self._process_join_results(rows, table_columns, join_controllers)
             ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
@@ -338,11 +425,11 @@ class SelectManager:
             join_records_map = None
         
         # SEMPRE armazena results no SelectManager para que exists() possa acessar
-        self._last_results = results        
-        
+        self._last_results = results                        
+
         if self._do_update:
             if results:
-                if self._joins:
+                if self._joins or self._include_relations:
                     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''                    
                     self._controller.records = [r[0] for r in results]
                     
@@ -353,6 +440,17 @@ class SelectManager:
 
                         if join_ctrl.records:
                             join_ctrl.set_current(join_ctrl.records[0])
+                    
+                    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+                    # Popula as Relations automáticas
+                    for rel_name, rel_info in self._relation_joins.items():
+                        relation    = rel_info['relation']
+                        join_idx    = rel_info['join_index']
+                        rel_records = join_records_map[join_idx]
+                        
+                        # Popula os records na relation
+                        relation.set_records(rel_records)
+                    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
                                         
                     if self._controller.records:
                         self._controller.set_current(self._controller.records[0])
@@ -364,17 +462,27 @@ class SelectManager:
             else:                
                 self._controller.clear()
                 self._controller.records = []                
-                if self._joins:
+                if self._joins or self._include_relations:
                     for join_info in self._joins:
                         join_ctrl = join_info['controller']
                         join_ctrl.clear()
                         join_ctrl.records = []
+                    
+                    ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
+                    # Limpa as Relations automáticas
+                    for rel_name, rel_info in self._relation_joins.items():
+                        relation = rel_info['relation']
+                        relation.clear()
+                    ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
         else:            
             self._controller.records = results
                 
         if hasattr(self._controller, '_pending_wrapper'):
             self._controller._pending_wrapper = None
         
+        if hasattr(self._controller, '_enrich_records'):
+            self._controller._enrich_records()
+
         return self._controller
     
     def _process_aggregate_results(self, rows, columns, table_columns):
@@ -425,6 +533,10 @@ class SelectManager:
         results = []
                 
         join_records_by_controller = {i: [] for i in range(len(join_controllers))}
+        
+        # Para relations: deduplica registros principais baseado em RECID
+        seen_main_recids = set()
+        deduplicated_main_records = []
 
         for row in rows:
             idx = 0
@@ -433,7 +545,15 @@ class SelectManager:
             for col in table_columns:
                 main_data[col[0]] = row[idx]
                 idx += 1
-                        
+            
+            # Deduplicação para relations (baseado em RECID)
+            if self._include_relations:
+                main_recid = main_data.get('RECID')
+                if main_recid is not None:
+                    if main_recid not in seen_main_recids:
+                        seen_main_recids.add(main_recid)
+                        deduplicated_main_records.append(main_data)
+            
             row_data = [main_data]  
             
             for join_idx, (ctrl, alias) in enumerate(join_controllers):
@@ -448,6 +568,10 @@ class SelectManager:
                 join_records_by_controller[join_idx].append(join_data)
             
             results.append(row_data)
+        
+        # Se há relations, substitui results pelos registros deduplicados
+        if self._include_relations and deduplicated_main_records:
+            results = [[rec] for rec in deduplicated_main_records]
         
         # Retorna tanto os resultados quanto os registros separados
         return results, join_records_by_controller
@@ -482,7 +606,7 @@ class JoinBuilder:
         other_alias = alias or self.other_table.source_name
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
         
-        on_sql, _ = condition.to_sql()
+        on_sql, _ = condition.to_sql(self.select_manager._controller.get_parameter_marker())
         
         self.select_manager._joins.append({
             'controller': self.other_table,
@@ -490,7 +614,7 @@ class JoinBuilder:
             'type':       self.join_type.upper(),
             'columns':    columns,
             'alias':      other_alias,
-            'index_hint': index_hint
+            'index_hint': self.select_manager._controller.format_index_hint(index_hint) if index_hint else ""
         })
         
         return self.select_manager

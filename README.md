@@ -2,6 +2,16 @@
 
 Sistema reutilizável para gerenciamento de conexões de banco de dados, validações de dados (EDTs e BaseEnums) e controle de tabelas e views.
 
+> **Repositório Privado** - Requer autenticação SSH  
+> **[Início Rápido](SQLManager/documents/QUICKSTART.md)** | **[Configurar SSH](SQLManager/documents/SSH_SETUP.md)** | **[Build/Deploy](SQLManager/documents/BUILD_DEPLOY.md)**
+
+---
+
+**Arquivos de exemplo:**
+- [requirements.txt.example](requirements.txt.example) - Template para seu projeto
+
+---
+
 ## Sumário
 - [Características](#características)
 - [Instalação](#instalação)
@@ -12,6 +22,7 @@ Sistema reutilizável para gerenciamento de conexões de banco de dados, valida�
   - [Controllers](#controllers---controladoras)
   - [Connection](#connection---conexões)
   - [AutoRouter API](#autorouter---api-rest)
+  - [WebSocket Tempo Real](#websocket---atualizações-em-tempo-real)
 - [Uso Básico](#uso-básico)
   - [API Fluente (JOINs, CRUD)](#nova-api-fluente-v20)
   - [Transações](#transações-isoladas)
@@ -30,36 +41,147 @@ Sistema reutilizável para gerenciamento de conexões de banco de dados, valida�
 - **Type Safety:** Validações de tipo e formato em runtime
 - **Model Generator:** Sistema automático de geração de modelos baseado no banco de dados
 - **AutoRouter:** Geração automática de endpoints RESTful para CRUD
+- **Relations System:** Relacionamentos automáticos entre tabelas com auto-população via JOIN ([Issue #5](https://github.com/nickzsd/SQLManager/issues/5))
+- **WebSocket Integrado:** Atualizações em tempo real automáticas para todas operações CRUD ([Issue #7](https://github.com/Avalon-Tecnologia/SQLManager/issues/7))
+- **Código Protegido:** Distribuição com ofuscação automática de bytecode (proteção IP)
+- **Repositório Privado:** Acesso controlado via SSH para segurança empresarial
 - Suporte a Tables e Views: Controllers para tabelas (CRUD completo) e views (leitura)
 
 ---
 
 ## Instalação
 
-### Como Repositório Externo
+### Pré-requisitos
 
-```bash
-pip install git+https://github.com/nickzsd/SQLManager.git
+- Python 3.8 ou superior
+- Git instalado
+- Chave SSH configurada no GitHub (repositório privado)
 
-# Ou adicione ao requirements.txt
-git+https://github.com/nickzsd/SQLManager.git
+---
+
+### 1. Configuração da Chave SSH (Primeira vez)
+
+Este repositório é **privado** e requer autenticação SSH. Siga os passos abaixo:
+
+#### Windows (PowerShell)
+
+```powershell
+# 1. Gerar chave SSH (se não tiver)
+ssh-keygen -t ed25519 -C "seu-email@exemplo.com"
+# Pressione Enter 3 vezes (aceita local padrão e sem senha)
+
+# 2. Copiar chave pública
+Get-Content ~\.ssh\id_ed25519.pub | Set-Clipboard
+# Ou visualize com: cat ~/.ssh/id_ed25519.pub
 ```
 
-> **ATENÇÃO:** O `pip install` executa automaticamente o gerador de modelos durante a instalação. Certifique-se de que:
-> - Seu arquivo `.env` está configurado com as credenciais do banco de dados (variáveis: `DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`)
-> - A pasta `src/` existe na raiz do seu projeto
-> - Todas as tabelas e views e views no banco possuem o campo `RECID` (tipo BIGINT)
->
-> **Exemplo do arquivo `.env`:**
-> ```env
-> DB_SERVER=localhost
-> DB_DATABASE=MeuBanco
-> DB_USER=admin
-> DB_PASSWORD=senha123
-> DB_DRIVER="DRIVER"
-> ```
+#### Linux/Mac (Bash)
 
-NOTA: O SQLManager será instalado no ambiente virtual (.venv) do seu projeto, não na pasta src/
+```bash
+# 1. Gerar chave SSH (se não tiver)
+ssh-keygen -t ed25519 -C "seu-email@exemplo.com"
+
+# 2. Copiar chave pública
+cat ~/.ssh/id_ed25519.pub | pbcopy  # Mac
+# ou
+cat ~/.ssh/id_ed25519.pub | xclip   # Linux
+```
+
+#### Adicionar no GitHub
+
+1. Acesse: [GitHub SSH Settings](https://github.com/settings/keys)
+2. Clique em **"New SSH key"**
+3. Cole a chave pública copiada
+4. Salve
+
+#### Testar Conexão
+
+```bash
+ssh -T git@github.com
+# Deve retornar: "Hi username! You've successfully authenticated..."
+```
+
+---
+
+### 2. Instalação do Pacote
+
+#### Opção A: Instalação Direta (Ambiente Virtual)
+
+```bash
+# 1. Criar ambiente virtual (recomendado)
+python -m venv .venv
+
+# 2. Ativar ambiente
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+# Linux/Mac:
+source .venv/bin/activate
+
+# 3. Instalar SQLManager via SSH
+pip install git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+```
+
+#### Opção B: Via requirements.txt (Recomendado para Projetos)
+
+Crie ou edite o arquivo `requirements.txt`:
+
+```txt
+# requirements.txt
+git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+```
+
+Depois instale:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 3. Configuração Inicial (Obrigatório)
+
+> **ATENÇÃO:** O `pip install` executa automaticamente o gerador de modelos durante a instalação. Certifique-se de que:
+> - Seu arquivo `.env` está configurado com as credenciais do banco de dados
+> - A pasta `src/` existe na raiz do seu projeto
+> - Todas as tabelas/views no banco possuem o campo `RECID` (tipo BIGINT)
+
+#### Exemplo do arquivo `.env`:
+
+```env
+DB_SERVER=localhost
+DB_DATABASE=MeuBanco
+DB_USER=admin
+DB_PASSWORD=senha123
+DB_DRIVER=ODBC Driver 17 for SQL Server
+```
+
+#### Se não houver `.env`, use parâmetros diretos:
+
+```powershell
+python -m SQLManager._model._model_update --server localhost --database MeuBanco --user admin --password senha123
+```
+
+**Parâmetros disponíveis:**
+- `--server`: Servidor do banco de dados
+- `--database`: Nome do banco de dados
+- `--user`: Usuário do banco
+- `--password`: Senha do banco
+- `--driver`: Driver ODBC (padrão: 'ODBC Driver 17 for SQL Server')
+
+---
+
+### 4. Atualizar para Versão Mais Recente
+
+```bash
+# Atualizar para a versão mais recente
+pip install --upgrade --force-reinstall git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+
+# Ou especifique uma branch/tag
+pip install --upgrade git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@develop
+```
+
+> 💡 **NOTA:** O SQLManager será instalado no ambiente virtual (`.venv`) do seu projeto, **não na pasta `src/`**.
+
 
 ## Passo Obrigatório: Gerar os Modelos
 
@@ -84,7 +206,9 @@ Esse comando irá criar (ou atualizar) automaticamente as seguintes pastas e arq
 > - O gerador sincroniza os campos das tabelas e views e views do banco com os arquivos Python.
 > - Não edite manualmente arquivos gerados, exceto para customizações documentadas.
 
-## Importação do Pacote
+---
+
+### 5. Importação do Pacote
 
 Após instalar, use:
 
@@ -92,32 +216,92 @@ Após instalar, use:
 from SQLManager import connection, controller, CoreConfig
 # ou
 from SQLManager.connection import database_connection
-from SQLManager.controller import EDTController, TableController, ViewController, TableController, ViewController
-```
-
-## Atualizando o SQLManager
-
-Para atualizar para a versão mais recente, execute:
-
-```bash
-pip install --upgrade --force-reinstall git+https://github.com/nickzsd/SQLManager.git
+from SQLManager.controller import EDTController, TableController, ViewController
 ```
 
 ---
+
+### 6. Verificar Instalação
+
+```powershell
+# Verificar se está instalado
+pip show SQLManager
+
+# Verificar versão importando
+python -c "import SQLManager; print(SQLManager.__version__ if hasattr(SQLManager, '__version__') else 'Instalado')"
+```
+
+---
+
+### Troubleshooting - Instalação
+
+#### Erro: "Permission denied (publickey)"
+
+Sua chave SSH não está configurada. Refaça o [passo 1](#1-configuração-da-chave-ssh-primeira-vez).
+
+#### Erro: "Repository not found"
+
+Você não tem acesso ao repositório privado. Entre em contato com o administrador.
+
+#### Erro: "Failed building wheel for SQLManager"
+
+Verifique se o Python e pip estão atualizados:
+
+```bash
+python --version  # Deve ser 3.8+
+pip install --upgrade pip setuptools wheel
+```
+
+#### Instalação não gera modelos
+
+Execute manualmente:
+
+```bash
+python -m SQLManager._model._model_update
+```
 
 ## Patch Notes
 
 ### Issues 
 
 #### Remodelagem do tableController
-> Issue: [#1-TableController Remodel](https://github.com/nickzsd/SQLManager/issues/1)  
+> Issue: [#1-TableController Remodel](https://github.com/Avalon-Tecnologia/SQLManager/issues/1)  
 > Solution [Development document](SQLManager/documents/Issues/Issue1_Note.md)
 
-> Issue: [#4-ViewController](https://github.com/nickzsd/SQLManager/issues/4)  
+> Issue: [#3-AutoRoutes](https://github.com/Avalon-Tecnologia/SQLManager/issues/3)  
+> Solution [Development document](SQLManager/documents/Issues/Issue3_Note.md)
+
+> Issue: [#4-ViewController](https://github.com/Avalon-Tecnologia/SQLManager/issues/4)  
 > Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
 
-> Issue: [#4-ViewController](https://github.com/nickzsd/SQLManager/issues/4)  
-> Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
+> Issue: [#5-Relation System](https://github.com/nickzsd/SQLManager/issues/5)  
+> Solution [Development document](SQLManager/documents/Issues/Issue5_Note.md)
+
+> Issue: [#6-UpdateModel](https://github.com/Avalon-Tecnologia/SQLManager/issues/6)  
+> Solution [Development document](SQLManager/documents/Issues/Issue6_Note.md)
+
+### Versão 4.0.0 (27/02/2026)
+
+**Relations System - Auto-serialização no AutoRouter:**
+- ✅ Relations definidas nas tabelas são automaticamente incluídas no JSON de resposta
+- ✅ Método `with_relations()` aplicado automaticamente em todos os SELECTs do AutoRouter
+- ✅ JSON estruturado com chave `relations` aninhada
+- ✅ Suporte a múltiplas relations por tabela
+- ✅ Documentação completa no [Issue5_Note.md](SQLManager/documents/Issues/Issue5_Note.md)
+
+**AutoRouter - Refatoração do Decorator:**
+- ✅ Decorator `_pre_handle` refatorado com `inspect.signature` para mapeamento robusto de argumentos
+- ✅ Suporte a argumentos nomeados e posicionais
+- ✅ Injeção automática de dependências (`_table`, `_table_config`)
+- ✅ Cache de configurações de tabelas (uppercase normalizado)
+- ✅ Método `_get_table_class_by_name()` separado para reutilização
+- ✅ Testes unitários completos ([test_AutoRouter.py](SQLManager/tests/test_AutoRouter.py))
+- ✅ Documentação expandida no [Issue3_Note.md](SQLManager/documents/Issues/Issue3_Note.md)
+
+**Arquivos modificados:**
+- `SQLManager/controller/RouterController.py`
+- `SQLManager/tests/test_AutoRouter.py`
+- `SQLManager/__init__.py`
 
 ### Versão 2.0.0 (12/01/2026)
 
@@ -191,9 +375,316 @@ Para documentação detalhada da classe connection, métodos e exemplos, consult
 
 ### AutoRouter - API REST
 
-Para documentação completa sobre endpoints, filtros, paginação e geração de coleção Postman, consulte:
+O **AutoRouter** é um sistema de rotas automáticas que transforma suas classes `TableController` em endpoints RESTful completos, eliminando a necessidade de criar controllers manuais para operações CRUD padrão.
+
+**Características principais:**
+- **Zero Boilerplate:** Crie a tabela no banco, gere os modelos, e as rotas já existem
+- **Validação Automática:** EDTs e Enums são validados antes de tocar no banco
+- **Filtros Avançados:** Suporte nativo a operadores (`_gt`, `_like`, `_lte`, etc.)
+- **Relations Automáticas:** Serializa automaticamente relations definidas nas tabelas (retorna JSON aninhado)
+>basta utilizar {URL}?relations=true em seu `GET`
+- **WebSocket Integrado:** Atualizações em tempo real automáticas para INSERT/UPDATE/DELETE
+- **Coleção Postman:** Geração automática de documentação para testes
+- **Decorator Robusto:** Usa `inspect.signature` para mapeamento type-safe de argumentos
+
+**Arquitetura:**
+- Utiliza **Roteamento Dinâmico** baseado em Reflexão (Introspection)
+- Padrão **Front Controller** para processamento centralizado
+- **Convenção sobre Configuração** para setup mínimo
+
+**Versão 4.0 (27/02/2026):** Decorator `_pre_handle` refatorado com `inspect.signature` para mapeamento robusto de argumentos nomeados e posicionais, com injeção automática de dependências (`_table`, `_table_config`).
+
+**Documentação completa:**
 
 - [SQLManager/documents/Issues/Issue3_Note.md](SQLManager/documents/Issues/Issue3_Note.md)
+
+---
+
+### WebSocket - Atualizações em Tempo Real
+
+O SQLManager possui **WebSocket integrado e automático** que envia notificações em tempo real sempre que dados são inseridos, atualizados ou deletados via AutoRouter.
+
+#### Características
+
+- **Broadcast Automático:** Toda operação POST/PATCH/DELETE envia eventos WebSocket automaticamente
+- **Dois Modos de Notificação:**
+  - **Simples (db_notification):** Apenas ação, tabela e RECID (leve)
+  - **Completo (db_data_sync):** Inclui dados completos do registro (sincronização)
+- **Rooms por Tabela:** Clientes se inscrevem apenas nas tabelas que precisam
+- **Zero Configuração:** Funciona automaticamente ao iniciar o AutoRouter com Flask-SocketIO
+
+---
+
+#### Instalação
+
+Instale a dependência Flask-SocketIO:  
+> OBS: Ao Instalar o SQLManager ele vai tentar instalar junto so processo.
+
+```bash
+pip install flask-socketio python-socketio
+```
+
+---
+
+#### Configuração do Servidor
+
+O WebSocket é **inicializado automaticamente** pelo AutoRouter se Flask-SocketIO estiver instalado:
+
+```python
+from flask import Flask
+from flask_socketio import SocketIO
+from SQLManager import CoreConfig
+from SQLManager.connection import database_connection
+from SQLManager.controller.RouterController import AutoRouter
+
+# Configura Flask + SocketIO
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Configura database
+CoreConfig.configure()
+db = database_connection()
+
+# AutoRouter com WebSocket automático
+router = AutoRouter(db, app=app, socketio=socketio)
+
+# Inicia servidor
+if __name__ == '__main__':
+    socketio.run(app, debug=True, host='0.0.0.0', port=3000)
+```
+
+**Pronto!** Agora toda operação de INSERT/UPDATE/DELETE enviará eventos WebSocket automaticamente.
+
+---
+
+#### Cliente JavaScript (Exemplo Completo)
+
+**Instalação no frontend:**
+```bash
+npm install socket.io-client
+# ou
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+```
+
+**Código do Cliente:**
+
+```javascript
+import { io } from 'socket.io-client';
+
+// Conecta ao WebSocket
+const socket = io('http://localhost:3000');
+
+// Evento: Conexão estabelecida
+socket.on('connection_response', (data) => {
+    console.log('Conectado ao SQLManager WebSocket');
+    console.log('Features disponíveis:', data.features);
+    
+    // Se inscreve em tabelas específicas
+    socket.emit('subscribe', { table: 'ProductsTable' });
+    socket.emit('subscribe', { table: 'OrdersTable' });
+});
+
+// Confirmação de inscrição
+socket.on('subscribed', (data) => {
+    console.log(`Inscrito em: ${data.table}`);
+});
+
+// ===== NOTIFICAÇÕES SIMPLES (sempre enviadas) =====
+socket.on('db_notification', (event) => {
+    console.log('Notificação:', event);
+    /*
+    Exemplo de event:
+    {
+        action: 'insert',   // ou 'update', 'delete', 'batch_update', 'batch_delete'
+        table: 'ProductsTable',
+        recid: 123
+    }
+    */
+    
+    // Atualiza UI baseado na ação
+    if (event.action === 'insert') {
+        // Fetch novo registro ou adiciona placeholder
+        fetchProductById(event.recid);
+    } else if (event.action === 'update') {
+        // Recarrega registro atualizado
+        refreshProduct(event.recid);
+    } else if (event.action === 'delete') {
+        // Remove da UI
+        removeProductFromList(event.recid);
+    }
+});
+
+// ===== DADOS COMPLETOS (enviado apenas se registro for buscado) =====
+socket.on('db_data_sync', (event) => {
+    console.log('Sincronização de dados:', event);
+    /*
+    Exemplo de event:
+    {
+        action: 'update',
+        table: 'ProductsTable',
+        recid: 123,
+        data: {
+            RECID: 123,
+            ITEMID: '01.01',
+            ITEMNAME: 'Produto Atualizado',
+            PRICE: 99.90,
+            ...
+        }
+    }
+    */
+    
+    // Atualiza dados diretamente sem fazer fetch
+    updateProductInCache(event.data);
+});
+
+// Cancelar inscrição (cleanup ao desmontar componente)
+function unsubscribeFromTable(tableName) {
+    socket.emit('unsubscribe', { table: tableName });
+}
+
+// Exemplo de funções auxiliares
+function fetchProductById(recid) {
+    fetch(`http://localhost:3000/manager/ProductsTable/${recid}`)
+        .then(res => res.json())
+        .then(product => addProductToList(product.data));
+}
+
+function refreshProduct(recid) {
+    fetch(`http://localhost:3000/manager/ProductsTable/${recid}`)
+        .then(res => res.json())
+        .then(product => updateProductInList(product.data));
+}
+
+function removeProductFromList(recid) {
+    const element = document.querySelector(`[data-recid="${recid}"]`);
+    if (element) element.remove();
+}
+
+function updateProductInCache(productData) {
+    // Atualiza estado global/Redux/Zustand/etc
+    store.updateProduct(productData);
+}
+```
+
+---
+
+#### Exemplo com React Hooks
+
+```jsx
+import { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+
+function ProductsRealtime() {
+    const [products, setProducts] = useState([]);
+    const [socket, setSocket] = useState(null);
+
+    useEffect(() => {
+        // Conecta ao WebSocket
+        const ws = io('http://localhost:3000');
+        setSocket(ws);
+
+        ws.on('connection_response', () => {
+            console.log('Conectado');
+            ws.emit('subscribe', { table: 'ProductsTable' });
+        });
+
+        // Notificações simples
+        ws.on('db_notification', (event) => {
+            if (event.table !== 'ProductsTable') return;
+
+            if (event.action === 'insert' || event.action === 'update') {
+                // Recarrega lista
+                fetchProducts();
+            } else if (event.action === 'delete') {
+                // Remove localmente
+                setProducts(prev => prev.filter(p => p.RECID !== event.recid));
+            }
+        });
+
+        // Dados completos (opcional, mais eficiente)
+        ws.on('db_data_sync', (event) => {
+            if (event.table !== 'ProductsTable') return;
+
+            if (event.action === 'insert') {
+                setProducts(prev => [...prev, event.data]);
+            } else if (event.action === 'update') {
+                setProducts(prev => prev.map(p => 
+                    p.RECID === event.recid ? event.data : p
+                ));
+            }
+        });
+
+        // Cleanup
+        return () => {
+            ws.emit('unsubscribe', { table: 'ProductsTable' });
+            ws.disconnect();
+        };
+    }, []);
+
+    const fetchProducts = async () => {
+        const res = await fetch('http://localhost:3000/manager/ProductsTable');
+        const json = await res.json();
+        setProducts(json.data);
+    };
+
+    return (
+        <div>
+            <h1>Produtos (Tempo Real)</h1>
+            <ul>
+                {products.map(p => (
+                    <li key={p.RECID}>{p.ITEMNAME} - R$ {p.PRICE}</li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+```
+
+---
+
+#### Tipos de Eventos WebSocket
+
+| Evento (Cliente → Servidor) | Descrição | Payload |
+|------------------------------|-----------|---------|
+| `connect` | Conecta ao WebSocket | - |
+| `subscribe` | Inscreve em uma tabela | `{ table: 'ProductsTable' }` |
+| `unsubscribe` | Cancela inscrição | `{ table: 'ProductsTable' }` |
+
+| Evento (Servidor → Cliente) | Descrição | Exemplo de Payload |
+|------------------------------|-----------|-------------------|
+| `connection_response` | Confirmação de conexão | `{ status: 'connected', features: [...] }` |
+| `subscribed` | Confirmação de inscrição | `{ table: 'ProductsTable', message: '...' }` |
+| `unsubscribed` | Confirmação de cancelamento | `{ table: 'ProductsTable' }` |
+| `db_notification` | Notificação simples de mudança | `{ action: 'update', table: 'Products', recid: 123 }` |
+| `db_data_sync` | Dados completos do registro | `{ action: 'insert', table: 'Products', recid: 456, data: {...} }` |
+
+---
+
+#### Quando Usar Cada Modo
+
+**Notificação Simples (`db_notification`):**
+- Atualizar contadores (ex: "5 novos pedidos")
+- Invalidar cache local
+- Mostrar toast/notificação
+- Recarregar lista completa
+
+**Dados Completos (`db_data_sync`):**
+- Sincronização em tempo real sem refetch
+- Atualizar registro específico na UI
+- WebSocket como fonte única de verdade
+- Mais pesado (envia JSON completo)
+
+---
+
+#### Desabilitando WebSocket
+
+Se não quiser usar WebSocket, basta não alocalós ao sistema da **autoRouter**:
+
+```bash
+pip uninstall flask-socketio python-socketio
+```
+
+O AutoRouter detecta automaticamente e **desabilita** o WebSocket sem erros.
 
 ---
 
@@ -201,7 +692,7 @@ Para documentação completa sobre endpoints, filtros, paginação e geração d
 
 O `CoreConfig` é a classe estática responsável por centralizar toda a configuração do SQLManager. Ele atua como uma ponte entre o seu projeto e o núcleo da biblioteca, permitindo definir conexões de banco de dados, regras de validação customizadas e comportamento de rotas sem modificar o código fonte do pacote.
 
-### 🎯 Funcionalidades Principais
+### Funcionalidades Principais
 
 1.  **Configuração de Banco de Dados:** Define credenciais e driver de conexão.
 2.  **Registro de Regex (EDTs):** Adiciona padrões de validação customizados para seus tipos de dados.
@@ -811,7 +1302,7 @@ products_view.select()\
 MeuProjeto/
 │
 ├── .env                   # Suas variáveis de ambiente
-├── requirements.txt       # git+https://github.com/nickzsd/SQLManager
+├── requirements.txt       # git+https://github.com/Avalon-Tecnologia/SQLManager
 ├── app.py                 # Configurar CoreConfig aqui
 │
 ├── src/
