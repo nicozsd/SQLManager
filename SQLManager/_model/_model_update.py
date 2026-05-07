@@ -275,7 +275,7 @@ if __name__ == "__main__":
     else:
         try:
             # Tenta carregar a Janela de Interface Gráfica
-            from SQLManager._model.dialog.run import dialog
+            from .dialog.run import dialog
             app_dialog = dialog("Model Update")
             app_dialog.start()
         except Exception as e:
