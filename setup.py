@@ -24,13 +24,10 @@ setup(
     install_requires=[
         "pyodbc>=4.0.0",
         "python-dotenv>=0.19.0",
-        "requests>=2.25.0", 
+        'flask-socketio>=5.0.0',        
         "pymysql>=1.0.0",
         "cryptography>=3.4.0",
-    ],
-    extras_require={
-        'websocket': ['flask-socketio>=5.0.0'],  # WebSocket opcional
-    },
+    ],    
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
