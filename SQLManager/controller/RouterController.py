@@ -20,10 +20,21 @@ from .SystemController  import SystemController
 from .WebSocketManager  import WebSocketManager
 
 try:
-    from flask import Flask, request, jsonify
+    _flask_module = importlib.import_module("flask")
+    request = _flask_module.request
+    jsonify = _flask_module.jsonify
     FLASK_AVAILABLE = True
 except ImportError:
+    request = None
+    jsonify = None
     FLASK_AVAILABLE = False
+
+try:
+    _starlette_requests_module = importlib.import_module("starlette.requests")
+    StarletteRequest = getattr(_starlette_requests_module, "Request")
+except ImportError:
+    class StarletteRequest:
+        pass
 
 class AutoRouter:
     """
@@ -77,10 +88,8 @@ class AutoRouter:
         self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws) if app else None
         print(f'[AutoRouter]   - ws_manager criado: {self.ws_manager is not None}')
         
-        # Registra rotas Flask automaticamente se app foi fornecido
+        # Registra rotas automaticamente se um app compatível foi fornecido
         if self.app and self.enabled:
-            if not FLASK_AVAILABLE:
-                raise ImportError("Flask não está disponível. Instale com: pip install flask")
             self._register_routes()        
 
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
@@ -151,7 +160,7 @@ class AutoRouter:
 
                 return func(**bound.arguments)
             except Exception as e:                                                
-                print(f"{SystemController.custom_text("PRE_HANDLE", 'red')}\n{e}")
+                print(f"{SystemController.custom_text('PRE_HANDLE', 'red')}\n{e}")
                 traceback.print_exc()
                 return {"status": 500, "error": f"Decorator error: {str(e)}"}
         
@@ -251,73 +260,151 @@ class AutoRouter:
         # Se WERKZEUG_RUN_MAIN == 'true', estamos no processo recarregado
         # Este é o processo que realmente executa a aplicação
         return werkzeug_main == 'true'
-    
-    def _register_routes(self):
-        """
-        Registra automaticamente todas as rotas Flask para as tabelas descobertas.
-        """
+
+    def _detect_app_adapter(self) -> str:
+        """Identifica o estilo de registro de rotas do app recebido."""
         if not self.app:
+            return "none"
+
+        if hasattr(self.app, "add_api_route"):
+            return "fastapi"
+        if hasattr(self.app, "add_route"):
+            return "starlette"
+        if hasattr(self.app, "route"):
+            return "flask"
+        if hasattr(self.app, "register_route"):
+            return "generic"
+
+        return "unsupported"
+
+    def _append_query_value(self, target: Dict[str, Any], key: str, value: Any):
+        """Preserva chaves repetidas convertendo o valor em lista quando necessário."""
+        if key not in target:
+            target[key] = value
             return
-        
-        suffix = self.config.get('url_suffix', 'manager').strip('/')
-        tables = self._discover_tables()
-        
-        if not tables:
-            return
-        
-        total_routes = 0
-        
-        # Registra rota de múltiplas tabelas: GET /manager?tbls=Products,Categories
-        @self.app.route(f"/{suffix}", methods=['GET'], endpoint="multi_table_get")
-        def multi_get():
-            query_params = request.args.to_dict(flat=False)  # Preserva múltiplos valores
-            # Converte para dict simples se necessário
-            params_dict = {}
-            for k, v in query_params.items():
-                params_dict[k] = v[0] if len(v) == 1 else v
-            
+
+        existing = target[key]
+        if isinstance(existing, list):
+            existing.append(value)
+        else:
+            target[key] = [existing, value]
+
+    def _normalize_query_params(self, query_params: Any) -> Dict[str, Any]:
+        """Normaliza query params para dict simples, preservando chaves repetidas."""
+        normalized: Dict[str, Any] = {}
+
+        if not query_params:
+            return normalized
+
+        if hasattr(query_params, "lists"):
+            for key, values in query_params.lists():
+                if not values:
+                    normalized[key] = ""
+                elif len(values) == 1:
+                    normalized[key] = values[0]
+                else:
+                    normalized[key] = list(values)
+            return normalized
+
+        if hasattr(query_params, "multi_items"):
+            for key, value in query_params.multi_items():
+                self._append_query_value(normalized, key, value)
+            return normalized
+
+        if hasattr(query_params, "items"):
+            for key, value in query_params.items():
+                normalized[key] = value
+            return normalized
+
+        if isinstance(query_params, dict):
+            return dict(query_params)
+
+        return normalized
+
+    async def _extract_request_body(self, request_obj: Any) -> Dict[str, Any]:
+        """Extrai JSON do request de forma compatível com Flask/ASGI."""
+        if request_obj is None:
+            return {}
+
+        if hasattr(request_obj, "get_json"):
+            try:
+                return request_obj.get_json(force=True, silent=True) or {}
+            except Exception:
+                return {}
+
+        if hasattr(request_obj, "json"):
+            try:
+                body = request_obj.json()
+                if inspect.isawaitable(body):
+                    body = await body
+                return body or {}
+            except Exception:
+                return {}
+
+        return {}
+
+    def _get_json_response_class(self):
+        """Carrega JSONResponse sob demanda para FastAPI/Starlette."""
+        for module_name in ("fastapi.responses", "starlette.responses"):
+            try:
+                module = importlib.import_module(module_name)
+                return getattr(module, "JSONResponse")
+            except (ImportError, AttributeError):
+                continue
+        return None
+
+    def _build_framework_response(self, result: Dict[str, Any], adapter: str):
+        """Converte o dict padrão do AutoRouter para a resposta esperada pelo framework."""
+        payload = dict(result)
+        status = payload.pop("status", 200)
+
+        if adapter == "flask":
+            if not FLASK_AVAILABLE or jsonify is None:
+                raise ImportError("Flask não está disponível. Instale com: pip install flask")
+            return jsonify(payload), status
+
+        response_class = self._get_json_response_class()
+        if response_class is not None:
+            return response_class(content=payload, status_code=status)
+
+        return payload, status
+
+    def _build_route_base(self, suffix: str, table_name: Optional[str] = None) -> str:
+        """Monta o path base de rota sem duplicar barras."""
+        parts = [part.strip("/") for part in (suffix, table_name) if part]
+        return "/" + "/".join(parts)
+
+    def _build_detail_route(self, base_route: str, adapter: str) -> str:
+        """Monta o path de detalhe conforme a sintaxe do framework."""
+        if adapter == "flask":
+            return f"{base_route}/<path:resource_path>"
+        return f"{base_route}/{{resource_path:path}}"
+
+    def _make_multi_route_handler(self, adapter: str):
+        """Cria handler para GET múltiplo conforme o framework."""
+        if adapter == "flask":
+            def multi_get():
+                params_dict = self._normalize_query_params(request.args)
+                result = self.handle_multi_get(params_dict)
+                return self._build_framework_response(result, adapter)
+
+            return multi_get
+
+        async def multi_get(request_obj: StarletteRequest):
+            params_dict = self._normalize_query_params(getattr(request_obj, "query_params", {}))
             result = self.handle_multi_get(params_dict)
-            status = result.pop('status', 200)
-            return jsonify(result), status
-        
-        total_routes += 1
-        
-        for table_name in tables:
-            table_upper = table_name.upper()
-            table_config = self._tables_config.get(table_upper, {})
-            
-            # Views: apenas GET permitido
-            is_view = self._is_view_cache.get(table_upper, False)
-            if is_view:
-                allowed_methods = ["GET"]
-            else:
-                allowed_methods = table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
-            
-            # Cria closures para cada tabela (evita problema de binding tardio)
-            routes_count = self._register_table_routes(table_name, allowed_methods, suffix)
-            total_routes += routes_count
-        
-        # Imprime apenas no processo recarregado do Flask (evita duplicação)
-        if self._should_print_logs():
-            print(f"{SystemController.custom_text('[AutoRouter]', 'green')} {total_routes} rotas registradas (/{suffix}/)")
-    
-    def _register_table_routes(self, table_name: str, allowed_methods: List[str], suffix: str) -> int:
-        """
-        Registra rotas Flask para uma tabela específica.
-        Retorna o número de rotas criadas.
-        """
-        routes_created = 0
-        # Rota para lista/criação: /{suffix}/{table}
-        base_route = f"/{suffix}/{table_name}"
-        list_methods = [m for m in ['GET', 'POST'] if m in allowed_methods]
-        
-        if list_methods:
-            @self.app.route(base_route, methods=list_methods, endpoint=f"{table_name}_list")
+            return self._build_framework_response(result, adapter)
+
+        return multi_get
+
+    def _make_table_list_handler(self, table_name: str, adapter: str):
+        """Cria handler para rotas de listagem/criação."""
+        if adapter == "flask":
             def table_list():
                 method = request.method
-                query_params = request.args.to_dict()
+                query_params = self._normalize_query_params(request.args)
                 body = request.get_json(force=True, silent=True) or {}
-                
+
                 result = self.handle_request(
                     method=method,
                     table_name=table_name,
@@ -325,26 +412,37 @@ class AutoRouter:
                     query_params=query_params,
                     body=body
                 )
-                
-                status = result.pop('status', 200)
-                return jsonify(result), status
-            
-            routes_created += len(list_methods)
-        
-        # Rota para operações com ID: /{suffix}/{table}/{id}
-        detail_route = f"{base_route}/<path:resource_path>"
-        detail_methods = [m for m in ['GET', 'PATCH', 'DELETE'] if m in allowed_methods]
-        
-        if detail_methods:
-            @self.app.route(detail_route, methods=detail_methods, endpoint=f"{table_name}_detail")
+
+                return self._build_framework_response(result, adapter)
+
+            return table_list
+
+        async def table_list(request_obj: StarletteRequest):
+            method = getattr(request_obj, "method", "GET")
+            query_params = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            body = await self._extract_request_body(request_obj)
+
+            result = self.handle_request(
+                method=method,
+                table_name=table_name,
+                path_parts=[],
+                query_params=query_params,
+                body=body
+            )
+
+            return self._build_framework_response(result, adapter)
+
+        return table_list
+
+    def _make_table_detail_handler(self, table_name: str, adapter: str):
+        """Cria handler para rotas de detalhe/custom route."""
+        if adapter == "flask":
             def table_detail(resource_path):
                 method = request.method
-                query_params = request.args.to_dict()
+                query_params = self._normalize_query_params(request.args)
                 body = request.get_json(force=True, silent=True) or {}
-                
-                # Divide o path (pode ser ID ou rota customizada)
                 path_parts = resource_path.split('/') if resource_path else []
-                
+
                 result = self.handle_request(
                     method=method,
                     table_name=table_name,
@@ -352,13 +450,137 @@ class AutoRouter:
                     query_params=query_params,
                     body=body
                 )
-                
-                status = result.pop('status', 200)
-                return jsonify(result), status
-            
-            routes_created += len(detail_methods)
-        
-        return routes_created
+
+                return self._build_framework_response(result, adapter)
+
+            return table_detail
+
+        async def table_detail(resource_path: str = "", request_obj: StarletteRequest = None):
+            method = getattr(request_obj, "method", "GET") if request_obj is not None else "GET"
+            query_params = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            body = await self._extract_request_body(request_obj)
+            path_parts = resource_path.split('/') if resource_path else []
+
+            result = self.handle_request(
+                method=method,
+                table_name=table_name,
+                path_parts=path_parts,
+                query_params=query_params,
+                body=body
+            )
+
+            return self._build_framework_response(result, adapter)
+
+        return table_detail
+
+    def get_route_definitions(self) -> List[Dict[str, Any]]:
+        """Expõe a malha de rotas para apps customizados ou registro manual."""
+        if not self.enabled:
+            return []
+
+        suffix = self.config.get('url_suffix', 'manager').strip('/')
+        tables = self._discover_tables()
+        if not tables:
+            return []
+
+        adapter = self._detect_app_adapter()
+        route_definitions = [
+            {
+                "path": self._build_route_base(suffix),
+                "methods": ["GET"],
+                "endpoint": "multi_table_get",
+                "handler": self._make_multi_route_handler(adapter),
+            }
+        ]
+
+        for table_name in tables:
+            table_upper = table_name.upper()
+            table_config = self._tables_config.get(table_upper, {})
+            is_view = self._is_view_cache.get(table_upper, False)
+            allowed_methods = ["GET"] if is_view else table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
+
+            route_definitions.extend(self._get_table_route_definitions(table_name, allowed_methods, suffix, adapter))
+
+        return route_definitions
+
+    def _get_table_route_definitions(self, table_name: str, allowed_methods: List[str], suffix: str, adapter: str) -> List[Dict[str, Any]]:
+        """Monta definições de rota por tabela sem acoplar ao framework."""
+        base_route = self._build_route_base(suffix, table_name)
+        route_definitions: List[Dict[str, Any]] = []
+
+        list_methods = [method for method in ["GET", "POST"] if method in allowed_methods]
+        if list_methods:
+            route_definitions.append(
+                {
+                    "path": base_route,
+                    "methods": list_methods,
+                    "endpoint": f"{table_name}_list",
+                    "handler": self._make_table_list_handler(table_name, adapter),
+                }
+            )
+
+        detail_methods = [method for method in ["GET", "PATCH", "DELETE"] if method in allowed_methods]
+        if detail_methods:
+            route_definitions.append(
+                {
+                    "path": self._build_detail_route(base_route, adapter),
+                    "methods": detail_methods,
+                    "endpoint": f"{table_name}_detail",
+                    "handler": self._make_table_detail_handler(table_name, adapter),
+                }
+            )
+
+        return route_definitions
+
+    def _register_route_definition(self, route_definition: Dict[str, Any], adapter: str):
+        """Registra uma rota no app conforme a API do framework."""
+        path = route_definition["path"]
+        methods = route_definition["methods"]
+        endpoint = route_definition["endpoint"]
+        handler = route_definition["handler"]
+        handler.__name__ = endpoint
+
+        if adapter == "flask":
+            self.app.route(path, methods=methods, endpoint=endpoint)(handler)
+            return
+
+        if adapter == "fastapi":
+            self.app.add_api_route(path, handler, methods=methods, name=endpoint)
+            return
+
+        if adapter == "starlette":
+            self.app.add_route(path, handler, methods=methods, name=endpoint)
+            return
+
+        if adapter == "generic":
+            self.app.register_route(path=path, methods=methods, endpoint=endpoint, handler=handler)
+            return
+
+        raise TypeError(
+            "Unsupported app type for AutoRouter. Use Flask/FastAPI/Starlette or consuma get_route_definitions() manualmente."
+        )
+    
+    def _register_routes(self):
+        """
+        Registra automaticamente todas as rotas no app compatível para as tabelas descobertas.
+        """
+        if not self.app:
+            return
+
+        adapter = self._detect_app_adapter()
+        route_definitions = self.get_route_definitions()
+        if not route_definitions:
+            return
+
+        total_routes = 0
+
+        for route_definition in route_definitions:
+            self._register_route_definition(route_definition, adapter)
+            total_routes += len(route_definition["methods"])
+
+        suffix = self.config.get('url_suffix', 'manager').strip('/')
+        if self._should_print_logs():
+            print(f"{SystemController.custom_text('[AutoRouter]', 'green')} {total_routes} rotas registradas (/{suffix}/)")
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 27/02/2026 '''
 
     def _get_field_map(self) -> Dict[str, str]:
@@ -454,7 +676,7 @@ class AutoRouter:
                 case _:
                     return {"status": 405, "error": "Method not supported"}
         except Exception as e:                        
-            print(f"{SystemController.custom_text("HANDLE_REQUEST", 'red')}\n{e}")
+            print(f"{SystemController.custom_text('HANDLE_REQUEST', 'red')}\n{e}")
             traceback.print_exc()
             return {"status": 500, "error": f"Internal Server Error: {str(e)}"}
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
@@ -619,7 +841,7 @@ class AutoRouter:
                 return {"status": 404, "error": "Record not found"}
             
         except Exception as e:
-            print(f"{SystemController.custom_text("HANDLE_GET", 'red')}\n{e}")
+            print(f"{SystemController.custom_text('HANDLE_GET', 'red')}\n{e}")
             traceback.print_exc()            
             raise    
 
