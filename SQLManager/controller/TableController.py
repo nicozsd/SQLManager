@@ -127,15 +127,18 @@ class TableController():
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
     def __setattr__(self, name: str, value: Any):
         '''Intercepta atribuições para validar EDT/Enum'''
-        if name in ('db', 'source_name', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
+        if name in ('db', 'source_name', 'records', 'Columns', 'Indexes', 'ForeignKeys',
                     '_where_conditions', '_columns', '_joins', '_order_by', '_limit', 
                     '_offset', '_group_by', '_having_conditions', '_distinct', '_do_update',
-                    'controller', '_pending_wrapper', '__select_manager'):
+                    'controller', '_pending_wrapper', '__select_manager', 'isUpdate'):
             object.__setattr__(self, name, value)
             return
 
-        if name in self.__dict__:            
-            attr = self.__dict__[name]
+        # Evita recursão infinita ao acessar self.__dict__ via __getattribute__
+        _dict = object.__getattribute__(self, '__dict__')
+
+        if name in _dict:            
+            attr = _dict[name]
             if isinstance(attr, (EDTController, BaseEnumController)):
                 if isinstance(value, EDTController):
                     attr.value = value.value
