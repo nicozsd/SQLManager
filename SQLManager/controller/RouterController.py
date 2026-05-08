@@ -7,6 +7,7 @@ import importlib
 import inspect
 import json
 import os
+import re
 import time
 import traceback
 from unittest import case
@@ -18,6 +19,7 @@ from .TableController   import TableController
 from .ViewController    import ViewController
 from .SystemController  import SystemController
 from .WebSocketManager  import WebSocketManager
+from .DataPulseCache    import data_pulse_cache
 
 try:
     _flask_module = importlib.import_module("flask")
@@ -78,6 +80,13 @@ class AutoRouter:
         self._is_view_cache:   Dict[str, bool]           = {}  # Cache para saber se é View
         self._query_cache:     Dict[str, tuple]          = {}  # Cache de queries: {cache_key: (timestamp, data)}
         self._cache_ttl = 30  # TTL do cache em segundos
+
+        cache_config = self.config.get('data_pulse_cache', {})
+        data_pulse_cache.configure(
+            enabled=cache_config.get('enabled', True),
+            default_ttl=cache_config.get('ttl', 45),
+            max_entries=cache_config.get('max_entries', 2000)
+        )
         
         # WebSocket Manager (DESABILITADO por padrão - use enable_websocket=True no config)
         enable_ws = self.config.get('enable_websocket', False)
@@ -85,7 +94,7 @@ class AutoRouter:
         print(f'[AutoRouter]   - enable_websocket no config: {enable_ws}')
         print(f'[AutoRouter]   - app fornecido: {app is not None}')
         print(f'[AutoRouter]   - socketio fornecido: {socketio is not None}')
-        self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws) if app else None
+        self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws, config=self.config.get('websocket', {})) if (app or socketio) else None
         print(f'[AutoRouter]   - ws_manager criado: {self.ws_manager is not None}')
         
         # Registra rotas automaticamente se um app compatível foi fornecido
@@ -480,8 +489,6 @@ class AutoRouter:
 
         suffix = self.config.get('url_suffix', 'manager').strip('/')
         tables = self._discover_tables()
-        if not tables:
-            return []
 
         adapter = self._detect_app_adapter()
         route_definitions = [
@@ -492,6 +499,10 @@ class AutoRouter:
                 "handler": self._make_multi_route_handler(adapter),
             }
         ]
+        route_definitions.extend(self._get_lookup_route_definitions(suffix, adapter))
+
+        if not tables:
+            return route_definitions
 
         for table_name in tables:
             table_upper = table_name.upper()
@@ -531,6 +542,217 @@ class AutoRouter:
             )
 
         return route_definitions
+
+    def _get_lookup_route_definitions(self, suffix: str, adapter: str) -> List[Dict[str, Any]]:
+        route_definitions: List[Dict[str, Any]] = []
+
+        for route_name, lookup_config in self._get_lookup_configs().items():
+            path = lookup_config.get("path")
+            if not path:
+                path = self._build_route_base(suffix, route_name)
+            elif not str(path).startswith("/"):
+                path = "/" + str(path).strip("/")
+
+            route_definitions.append(
+                {
+                    "path": path,
+                    "methods": ["GET"],
+                    "endpoint": f"{route_name.replace('-', '_')}_lookup",
+                    "handler": self._make_lookup_handler(route_name, adapter),
+                }
+            )
+
+        return route_definitions
+
+    def _get_lookup_configs(self) -> Dict[str, Dict[str, Any]]:
+        configs: Dict[str, Dict[str, Any]] = {}
+        raw_configs = self.config.get("lookup_routes", {})
+
+        if isinstance(raw_configs, dict):
+            for route_name, route_config in raw_configs.items():
+                if isinstance(route_config, dict):
+                    cfg = dict(route_config)
+                    cfg.setdefault("route", route_name)
+                    configs[str(route_name).strip("/")] = cfg
+
+        if isinstance(raw_configs, list):
+            for route_config in raw_configs:
+                if not isinstance(route_config, dict):
+                    continue
+                route_name = route_config.get("route") or route_config.get("name")
+                if route_name:
+                    configs[str(route_name).strip("/")] = dict(route_config)
+
+        for table_name, table_config in self.config.get("tables", {}).items():
+            lookup_config = table_config.get("lookup") if isinstance(table_config, dict) else None
+            if isinstance(lookup_config, dict):
+                route_name = lookup_config.get("route", f"{table_name.lower()}-lookup")
+                cfg = dict(lookup_config)
+                cfg.setdefault("table", lookup_config.get("source_table", table_name))
+                cfg.setdefault("route", route_name)
+                configs[str(route_name).strip("/")] = cfg
+
+        return configs
+
+    def _make_lookup_handler(self, route_name: str, adapter: str):
+        if adapter == "flask":
+            def lookup_handler():
+                params_dict = self._normalize_query_params(request.args)
+                result = self.handle_lookup(route_name, params_dict)
+                return self._build_framework_response(result, adapter)
+
+            return lookup_handler
+
+        async def lookup_handler(request_obj: StarletteRequest):
+            params_dict = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            result = self.handle_lookup(route_name, params_dict)
+            return self._build_framework_response(result, adapter)
+
+        return lookup_handler
+
+    def _is_safe_lookup_identifier(self, value: str) -> bool:
+        if not value:
+            return False
+        pattern = r"^\[?[A-Za-z_][A-Za-z0-9_]*\]?(?:\.\[?[A-Za-z_][A-Za-z0-9_]*\]?)*$"
+        return bool(re.match(pattern, value))
+
+    def _normalize_lookup_identifiers(self, values: List[str], field_name: str) -> List[str]:
+        normalized = []
+        for value in values:
+            value = str(value).strip()
+            if not self._is_safe_lookup_identifier(value):
+                raise ValueError(f"Identificador inválido em {field_name}: {value}")
+            normalized.append(value)
+        return normalized
+
+    def _lookup_list(self, value: Any) -> List[Any]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return list(value)
+
+    def _get_parameter_marker(self) -> str:
+        return "%s" if getattr(self.db, "db_type", "").lower() == "mysql" else "?"
+
+    def _lookup_table_clause(self, table_name: str) -> str:
+        table_name = str(table_name).strip()
+        if not self._is_safe_lookup_identifier(table_name):
+            raise ValueError(f"Tabela inválida para lookup: {table_name}")
+        if getattr(self.db, "db_type", "").lower() == "mysql":
+            return table_name
+        return f"{table_name} WITH (NOLOCK)"
+
+    def _lookup_page_query(self, base_query: str, params: List[Any], offset: int, limit: int) -> tuple:
+        marker = self._get_parameter_marker()
+        if getattr(self.db, "db_type", "").lower() == "mysql":
+            return f"{base_query} LIMIT {marker} OFFSET {marker}", tuple(params + [limit, offset])
+        return f"{base_query} OFFSET {marker} ROWS FETCH NEXT {marker} ROWS ONLY", tuple(params + [offset, limit])
+
+    def handle_lookup(self, route_name: str, query_params: Dict[str, Any]) -> Dict[str, Any]:
+        lookup_config = self._get_lookup_configs().get(str(route_name).strip("/"))
+        if not lookup_config:
+            return {"status": 404, "error": f"Lookup '{route_name}' not found"}
+        return self._execute_lookup(route_name, query_params, lookup_config)
+
+    def _execute_lookup(self, route_name: str, query_params: Dict[str, Any], lookup_config: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            try:
+                limit = int(query_params.get("limit", "0") or "0")
+            except Exception:
+                limit = 0
+            try:
+                page = int(query_params.get("page", "1") or "1")
+            except Exception:
+                page = 1
+
+            batch = str(query_params.get("batch", "")).lower() in ("1", "true", "yes")
+            query_text = str(query_params.get("q") or "").strip()
+
+            table_name = lookup_config.get("source_table") or lookup_config.get("table")
+            if not table_name:
+                return {"status": 400, "error": "Lookup sem tabela configurada"}
+            if str(table_name).upper() in self._exclude_tables:
+                return {"status": 404, "error": f"Table '{table_name}' access is restricted"}
+
+            columns = lookup_config.get("columns") or []
+            search_columns = lookup_config.get("search_columns") or lookup_config.get("search") or []
+            order_by = lookup_config.get("order_by") or "RECID"
+
+            columns = self._normalize_lookup_identifiers(self._lookup_list(columns), "columns")
+            search_columns = self._normalize_lookup_identifiers(self._lookup_list(search_columns), "search_columns")
+            order_by = self._normalize_lookup_identifiers([order_by], "order_by")[0]
+
+            if not columns:
+                return {"status": 400, "error": "Lookup sem colunas configuradas"}
+
+            marker = self._get_parameter_marker()
+            params = []
+            where_clause = ""
+            if query_text and search_columns:
+                where_clause = " WHERE " + " OR ".join([f"{column} LIKE {marker}" for column in search_columns])
+                like_text = f"%{query_text}%"
+                params = [like_text for _ in search_columns]
+
+            table_clause = self._lookup_table_clause(table_name)
+            base_query = f"SELECT {', '.join(columns)} FROM {table_clause}{where_clause} ORDER BY {order_by}"
+            cache_key = data_pulse_cache.make_query_key(
+                [table_name],
+                "lookup",
+                {
+                    "route": route_name,
+                    "query": base_query,
+                    "params": tuple(params),
+                    "limit": limit,
+                    "page": page,
+                    "batch": batch,
+                }
+            )
+
+            cached_response = data_pulse_cache.get(table_name, cache_key)
+            if cached_response is not None:
+                return cached_response
+
+            rows = []
+            with self.db.transaction() as lookup_db:
+                if limit > 0:
+                    offset = (max(page, 1) - 1) * max(limit, 1)
+                    query, page_params = self._lookup_page_query(base_query, params, offset, limit)
+                    rows = lookup_db.doQuery(query, page_params)
+                else:
+                    batch_size = int(lookup_config.get("batch_size", 1000) or 1000)
+                    offset = 0
+                    while True:
+                        query, page_params = self._lookup_page_query(base_query, params, offset, batch_size)
+                        batch_rows = lookup_db.doQuery(query, page_params)
+                        if not batch_rows:
+                            break
+                        rows.extend(batch_rows)
+                        if len(batch_rows) < batch_size:
+                            break
+                        offset += batch_size
+
+                total = None
+                if batch:
+                    try:
+                        count_query = f"SELECT COUNT(*) FROM {table_clause}{where_clause}"
+                        count_rows = lookup_db.doQuery(count_query, tuple(params))
+                        total = count_rows[0][0] if count_rows else 0
+                    except Exception:
+                        total = None
+
+            result = []
+            for row in rows:
+                result.append({column.strip("[]"): row[index] for index, column in enumerate(columns)})
+
+            response = {"status": 200, "data": result}
+            if total is not None:
+                response["total"] = total
+
+            data_pulse_cache.set(table_name, cache_key, response, ttl=lookup_config.get("ttl"))
+            return response
+        except Exception as e:
+            return {"status": 500, "error": str(e)}
 
     def _register_route_definition(self, route_definition: Dict[str, Any], adapter: str):
         """Registra uma rota no app conforme a API do framework."""
@@ -822,6 +1044,16 @@ class AutoRouter:
             mode = params.get('mode', '').lower()
             if mode == 'batch' and not path_parts:
                 return self._handle_get_batch(table, params, config, field_map, include_relations)
+
+            if path_parts and path_parts[0].lower() == "lookup":
+                lookup_config = config.get("lookup", {}) if isinstance(config, dict) else {}
+                if not isinstance(lookup_config, dict):
+                    lookup_config = {}
+                lookup_config = dict(lookup_config)
+                lookup_config.setdefault("table", lookup_config.get("source_table", table.source_name))
+                lookup_config.setdefault("columns", list(field_map.values()))
+                lookup_config.setdefault("search_columns", list(field_map.values()))
+                return self._execute_lookup(f"{table.source_name.lower()}-lookup", params, lookup_config)
 
             # Rota: GET /{table}/{id}
             if path_parts and path_parts[0].isdigit():                                

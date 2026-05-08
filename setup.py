@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="SQLManager",
-    version="4.2.2",
+    version="4.3.0",
     description="Sistema para gerenciamento de banco de dados e validações",
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
@@ -24,7 +24,7 @@ setup(
     install_requires=[
         "pyodbc>=4.0.0",
         "python-dotenv>=0.19.0",
-        'flask-socketio>=5.0.0',        
+        "flask-socketio>=5.0.0",        
         "pymysql>=1.0.0",
         "cryptography>=3.4.0",
     ],    

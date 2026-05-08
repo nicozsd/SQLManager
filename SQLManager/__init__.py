@@ -6,6 +6,7 @@ from .CoreConfig import CoreConfig
 from .controller.RouterController        import AutoRouter
 from .controller.WebSocketManager        import WebSocketManager
 from .controller.databaseWatchController import DatabaseWatcher
+from .controller.DataPulseCache          import data_pulse_cache, DataPulseCache
 
 __all__ = [
     "database_connection",
@@ -18,6 +19,8 @@ __all__ = [
     "CoreConfig",    
     "AutoRouter",
     "WebSocketManager",
-    "DatabaseWatcher"
+    "DatabaseWatcher",
+    "DataPulseCache",
+    "data_pulse_cache"
 ]
 ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''

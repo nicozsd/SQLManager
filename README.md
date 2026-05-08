@@ -1,14 +1,60 @@
-﻿# SQLManager - Sistema de Gerenciamento de Banco de Dados
+﻿<div align="center">
 
-Sistema reutilizável para gerenciamento de conexões de banco de dados, validações de dados (EDTs e BaseEnums) e controle de tabelas e views.
+<img src="assets/logo.svg" alt="SQLManager Logo" width="760"/>
 
-> **Repositório Privado** - Requer autenticação SSH  
-> **[Início Rápido](SQLManager/documents/QUICKSTART.md)** | **[Configurar SSH](SQLManager/documents/SSH_SETUP.md)** | **[Build/Deploy](SQLManager/documents/BUILD_DEPLOY.md)**
+<br/>
+
+<!-- Badges -->
+<p>
+  <img src="https://img.shields.io/badge/Python-3.8%2B-00e5ff?style=for-the-badge&logo=python&logoColor=white&labelColor=080c14"/>
+  <img src="https://img.shields.io/badge/Version-4.0.0-7c3aed?style=for-the-badge&labelColor=080c14"/>
+  <img src="https://img.shields.io/badge/License-Private-f59e0b?style=for-the-badge&labelColor=080c14"/>
+  <img src="https://img.shields.io/badge/Status-Production-10b981?style=for-the-badge&labelColor=080c14"/>
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/SQL_Server-supported-00d4ff?style=flat-square&logo=microsoftsqlserver&logoColor=white&labelColor=161b22"/>
+  <img src="https://img.shields.io/badge/MySQL-supported-00d4ff?style=flat-square&logo=mysql&logoColor=white&labelColor=161b22"/>
+  <img src="https://img.shields.io/badge/WebSocket-real--time-7c3aed?style=flat-square&logo=socketdotio&logoColor=white&labelColor=161b22"/>
+  <img src="https://img.shields.io/badge/Flask-AutoRouter-10b981?style=flat-square&logo=flask&logoColor=white&labelColor=161b22"/>
+</p>
+
+<br/>
+
+> **Framework Python de gerenciamento de banco de dados com API fluente, AutoRouter REST e WebSocket em tempo real.**
+
+<br/>
+
+[![Início Rápido](https://img.shields.io/badge/Inicio_Rapido-080c14?style=for-the-badge)](SQLManager/documents/QUICKSTART.md)
+[![Build & Deploy](https://img.shields.io/badge/Build_/_Deploy-080c14?style=for-the-badge)](SQLManager/documents/BUILD_DEPLOY.md)
+[![Documentação](https://img.shields.io/badge/Documentacao-080c14?style=for-the-badge)](SQLManager/controller/Instructions.md)
+
+</div>
 
 ---
 
-**Arquivos de exemplo:**
-- [requirements.txt.example](requirements.txt.example) - Template para seu projeto
+<div align="center">
+
+## Por que SQLManager?
+
+</div>
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   Sem SQLManager              →         Com SQLManager                      │
+│                                                                             │
+│   cursor.execute("SELECT...")           products.select()                   │
+│   WHERE dicts & raw strings            .where(products.PRICE > 100)        │
+│   Sem validação de tipos               .order_by(products.NAME)            │
+│   Endpoints REST manuais               .limit(10)           ✓              │
+│   Zero WebSocket integrado                                                  │
+│                                        # API REST gerada automaticamente    │
+│                                        # WebSocket incluso                  │
+│                                        # EDTs validam seus dados            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -23,6 +69,7 @@ Sistema reutilizável para gerenciamento de conexões de banco de dados, valida�
   - [Connection](#connection---conexões)
   - [AutoRouter API](#autorouter---api-rest)
   - [WebSocket Tempo Real](#websocket---atualizações-em-tempo-real)
+  - [DataPulseCache e Lookup](SQLManager/documents/DataPulseCache.md)
 - [Uso Básico](#uso-básico)
   - [API Fluente (JOINs, CRUD)](#nova-api-fluente-v20)
   - [Transações](#transações-isoladas)
@@ -33,19 +80,22 @@ Sistema reutilizável para gerenciamento de conexões de banco de dados, valida�
 
 ## Características
 
-- **Pool de Conexões:** Gerenciamento eficiente de conexões com banco de dados
-- **Transações Isoladas:** Sistema de transações similar ao KNEX.js
-- **Validações Extensíveis:** Sistema de EDTs (Extended Data Types) com regex customizáveis
-- **BaseEnums:** Sistema de enumerações com validação integrada
-- **Configuração Flexível:** Suporte a múltiplos projetos sem modificar o Core
-- **Type Safety:** Validações de tipo e formato em runtime
-- **Model Generator:** Sistema automático de geração de modelos baseado no banco de dados
-- **AutoRouter:** Geração automática de endpoints RESTful para CRUD
-- **Relations System:** Relacionamentos automáticos entre tabelas com auto-população via JOIN ([Issue #5](https://github.com/nickzsd/SQLManager/issues/5))
-- **WebSocket Integrado:** Atualizações em tempo real automáticas para todas operações CRUD ([Issue #7](https://github.com/Avalon-Tecnologia/SQLManager/issues/7))
-- **Código Protegido:** Distribuição com ofuscação automática de bytecode (proteção IP)
-- **Repositório Privado:** Acesso controlado via SSH para segurança empresarial
-- Suporte a Tables e Views: Controllers para tabelas (CRUD completo) e views (leitura)
+<div align="center">
+
+| Feature | Descrição |
+|:---|:---|
+| **Pool de Conexões** | Gerenciamento eficiente de conexões com banco de dados |
+| **Transações Isoladas** | Sistema de transações estilo KNEX.js com `ttsbegin/ttscommit` |
+| **EDTs & Validações** | Extended Data Types com regex customizáveis e type-safety em runtime |
+| **BaseEnums** | Enumerações tipadas com validação integrada |
+| **AutoRouter** | Geração automática de endpoints RESTful — zero boilerplate |
+| **Relations System** | JOIN automático com auto-população de dados relacionados |
+| **WebSocket Integrado** | Tempo real em INSERT/UPDATE/DELETE — sem configuração extra |
+| **Model Generator** | Sincroniza tabelas/views do banco para classes Python automaticamente |
+| **Código Protegido** | Ofuscação de bytecode para proteção de IP |
+| **Tables & Views** | Controllers unificados para CRUD completo e leitura de views |
+
+</div>
 
 ---
 
@@ -55,55 +105,11 @@ Sistema reutilizável para gerenciamento de conexões de banco de dados, valida�
 
 - Python 3.8 ou superior
 - Git instalado
-- Chave SSH configurada no GitHub (repositório privado)
+- Acesso ao repositório (entre em contato com o administrador)
 
 ---
 
-### 1. Configuração da Chave SSH (Primeira vez)
-
-Este repositório é **privado** e requer autenticação SSH. Siga os passos abaixo:
-
-#### Windows (PowerShell)
-
-```powershell
-# 1. Gerar chave SSH (se não tiver)
-ssh-keygen -t ed25519 -C "seu-email@exemplo.com"
-# Pressione Enter 3 vezes (aceita local padrão e sem senha)
-
-# 2. Copiar chave pública
-Get-Content ~\.ssh\id_ed25519.pub | Set-Clipboard
-# Ou visualize com: cat ~/.ssh/id_ed25519.pub
-```
-
-#### Linux/Mac (Bash)
-
-```bash
-# 1. Gerar chave SSH (se não tiver)
-ssh-keygen -t ed25519 -C "seu-email@exemplo.com"
-
-# 2. Copiar chave pública
-cat ~/.ssh/id_ed25519.pub | pbcopy  # Mac
-# ou
-cat ~/.ssh/id_ed25519.pub | xclip   # Linux
-```
-
-#### Adicionar no GitHub
-
-1. Acesse: [GitHub SSH Settings](https://github.com/settings/keys)
-2. Clique em **"New SSH key"**
-3. Cole a chave pública copiada
-4. Salve
-
-#### Testar Conexão
-
-```bash
-ssh -T git@github.com
-# Deve retornar: "Hi username! You've successfully authenticated..."
-```
-
----
-
-### 2. Instalação do Pacote
+### 1. Instalação do Pacote
 
 #### Opção A: Instalação Direta (Ambiente Virtual)
 
@@ -117,8 +123,8 @@ python -m venv .venv
 # Linux/Mac:
 source .venv/bin/activate
 
-# 3. Instalar SQLManager via SSH
-pip install git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+# 3. Instalar SQLManager
+pip install git+https://github.com/Avalon-Tecnologia/SQLManager.git
 ```
 
 #### Opção B: Via requirements.txt (Recomendado para Projetos)
@@ -127,7 +133,7 @@ Crie ou edite o arquivo `requirements.txt`:
 
 ```txt
 # requirements.txt
-git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+git+https://github.com/Avalon-Tecnologia/SQLManager.git
 ```
 
 Depois instale:
@@ -138,7 +144,7 @@ pip install -r requirements.txt
 
 ---
 
-### 3. Configuração Inicial (Obrigatório)
+### 2. Configuração Inicial (Obrigatório)
 
 > **ATENÇÃO:** O `pip install` executa automaticamente o gerador de modelos durante a instalação. Certifique-se de que:
 > - Seu arquivo `.env` está configurado com as credenciais do banco de dados
@@ -170,17 +176,17 @@ python -m SQLManager._model._model_update --server localhost --database MeuBanco
 
 ---
 
-### 4. Atualizar para Versão Mais Recente
+### 3. Atualizar para Versão Mais Recente
 
 ```bash
 # Atualizar para a versão mais recente
-pip install --upgrade --force-reinstall git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git
+pip install --upgrade --force-reinstall git+https://github.com/Avalon-Tecnologia/SQLManager.git
 
 # Ou especifique uma branch/tag
-pip install --upgrade git+ssh://git@github.com/Avalon-Tecnologia/SQLManager.git@develop
+pip install --upgrade git+https://github.com/Avalon-Tecnologia/SQLManager.git@develop
 ```
 
-> 💡 **NOTA:** O SQLManager será instalado no ambiente virtual (`.venv`) do seu projeto, **não na pasta `src/`**.
+> **NOTA:** O SQLManager será instalado no ambiente virtual (`.venv`) do seu projeto, **não na pasta `src/`**.
 
 
 ## Passo Obrigatório: Gerar os Modelos
@@ -208,7 +214,7 @@ Esse comando irá criar (ou atualizar) automaticamente as seguintes pastas e arq
 
 ---
 
-### 5. Importação do Pacote
+### 4. Importação do Pacote
 
 Após instalar, use:
 
@@ -221,7 +227,7 @@ from SQLManager.controller import EDTController, TableController, ViewController
 
 ---
 
-### 6. Verificar Instalação
+### 5. Verificar Instalação
 
 ```powershell
 # Verificar se está instalado
@@ -235,13 +241,9 @@ python -c "import SQLManager; print(SQLManager.__version__ if hasattr(SQLManager
 
 ### Troubleshooting - Instalação
 
-#### Erro: "Permission denied (publickey)"
-
-Sua chave SSH não está configurada. Refaça o [passo 1](#1-configuração-da-chave-ssh-primeira-vez).
-
 #### Erro: "Repository not found"
 
-Você não tem acesso ao repositório privado. Entre em contato com o administrador.
+Você não tem acesso ao repositório. Entre em contato com o administrador.
 
 #### Erro: "Failed building wheel for SQLManager"
 
@@ -262,41 +264,35 @@ python -m SQLManager._model._model_update
 
 ## Patch Notes
 
-### Issues 
+<div align="center">
 
-#### Remodelagem do tableController
-> Issue: [#1-TableController Remodel](https://github.com/Avalon-Tecnologia/SQLManager/issues/1)  
-> Solution [Development document](SQLManager/documents/Issues/Issue1_Note.md)
+| # | Issue | Descrição |
+|:---:|:---|:---|
+| [#1](https://github.com/Avalon-Tecnologia/SQLManager/issues/1) | **TableController Remodel** | [Documento de desenvolvimento](SQLManager/documents/Issues/Issue1_Note.md) |
+| [#3](https://github.com/Avalon-Tecnologia/SQLManager/issues/3) | **AutoRoutes** | [Documento de desenvolvimento](SQLManager/documents/Issues/Issue3_Note.md) |
+| [#4](https://github.com/Avalon-Tecnologia/SQLManager/issues/4) | **ViewController** | [Documento de desenvolvimento](SQLManager/documents/Issues/Issue4_Note.md) |
+| [#5](https://github.com/nickzsd/SQLManager/issues/5) | **Relation System** | [Documento de desenvolvimento](SQLManager/documents/Issues/Issue5_Note.md) |
+| [#6](https://github.com/Avalon-Tecnologia/SQLManager/issues/6) | **UpdateModel** | [Documento de desenvolvimento](SQLManager/documents/Issues/Issue6_Note.md) |
 
-> Issue: [#3-AutoRoutes](https://github.com/Avalon-Tecnologia/SQLManager/issues/3)  
-> Solution [Development document](SQLManager/documents/Issues/Issue3_Note.md)
-
-> Issue: [#4-ViewController](https://github.com/Avalon-Tecnologia/SQLManager/issues/4)  
-> Solution [Development document](SQLManager/documents/Issues/Issue4_Note.md)
-
-> Issue: [#5-Relation System](https://github.com/nickzsd/SQLManager/issues/5)  
-> Solution [Development document](SQLManager/documents/Issues/Issue5_Note.md)
-
-> Issue: [#6-UpdateModel](https://github.com/Avalon-Tecnologia/SQLManager/issues/6)  
-> Solution [Development document](SQLManager/documents/Issues/Issue6_Note.md)
+</div>
 
 ### Versão 4.0.0 (27/02/2026)
 
 **Relations System - Auto-serialização no AutoRouter:**
-- ✅ Relations definidas nas tabelas são automaticamente incluídas no JSON de resposta
-- ✅ Método `with_relations()` aplicado automaticamente em todos os SELECTs do AutoRouter
-- ✅ JSON estruturado com chave `relations` aninhada
-- ✅ Suporte a múltiplas relations por tabela
-- ✅ Documentação completa no [Issue5_Note.md](SQLManager/documents/Issues/Issue5_Note.md)
+- Relations definidas nas tabelas são automaticamente incluídas no JSON de resposta
+- Método `with_relations()` aplicado automaticamente em todos os SELECTs do AutoRouter
+- JSON estruturado com chave `relations` aninhada
+- Suporte a múltiplas relations por tabela
+- Documentação completa no [Issue5_Note.md](SQLManager/documents/Issues/Issue5_Note.md)
 
 **AutoRouter - Refatoração do Decorator:**
-- ✅ Decorator `_pre_handle` refatorado com `inspect.signature` para mapeamento robusto de argumentos
-- ✅ Suporte a argumentos nomeados e posicionais
-- ✅ Injeção automática de dependências (`_table`, `_table_config`)
-- ✅ Cache de configurações de tabelas (uppercase normalizado)
-- ✅ Método `_get_table_class_by_name()` separado para reutilização
-- ✅ Testes unitários completos ([test_AutoRouter.py](SQLManager/tests/test_AutoRouter.py))
-- ✅ Documentação expandida no [Issue3_Note.md](SQLManager/documents/Issues/Issue3_Note.md)
+- Decorator `_pre_handle` refatorado com `inspect.signature` para mapeamento robusto de argumentos
+- Suporte a argumentos nomeados e posicionais
+- Injeção automática de dependências (`_table`, `_table_config`)
+- Cache de configurações de tabelas (uppercase normalizado)
+- Método `_get_table_class_by_name()` separado para reutilização
+- Testes unitários completos ([test_AutoRouter.py](SQLManager/tests/test_AutoRouter.py))
+- Documentação expandida no [Issue3_Note.md](SQLManager/documents/Issues/Issue3_Note.md)
 
 **Arquivos modificados:**
 - `SQLManager/controller/RouterController.py`
@@ -1447,3 +1443,21 @@ db = database_connection(
 ---
 
 **Nota**: Este Core é projetado para ser um repositório independente. Nunca modifique arquivos do Core diretamente no projeto host. Use `CoreConfig` para todas as customizações.
+
+---
+
+<div align="center">
+
+<img src="assets/logo.svg" alt="SQLManager" width="500"/>
+
+<br/>
+
+**SQLManager** · Framework Python para gerenciamento de banco de dados
+
+<sub>Construído com proteção de IP · alta performance · tempo real</sub>
+
+<br/>
+
+<sub>© 2026 Avalon Tecnologia · Repositório Privado · Todos os direitos reservados</sub>
+
+</div>
