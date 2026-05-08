@@ -233,10 +233,7 @@ class database_connection (_TTS_Manager, _Consult_Manager):
         )
         self._pool    = Queue(maxsize=_pool_size)
         self._timeout = _timeout
-        self._local   = threading.local() 
-        
-        print(self.db_params)
-        print(self.db_type)
+        self._local   = threading.local()                 
     
     @property
     def connection(self):
@@ -319,8 +316,7 @@ class database_connection (_TTS_Manager, _Consult_Manager):
     def can_connect(self) -> bool:
         '''Testa se a conexão pode ser estabelecida'''
         try:
-            if self.db_type == 'mysql':
-                print('mysql')
+            if self.db_type == 'mysql':                
                 port = int(os.getenv('DB_PORT', '3306'))
                 conn = pymysql.connect(
                     host=self.db_params['server'],

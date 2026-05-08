@@ -7,6 +7,7 @@ import importlib
 import inspect
 import json
 import os
+import re
 import time
 import traceback
 from unittest import case
@@ -18,12 +19,24 @@ from .TableController   import TableController
 from .ViewController    import ViewController
 from .SystemController  import SystemController
 from .WebSocketManager  import WebSocketManager
+from .DataPulseCache    import data_pulse_cache
 
 try:
-    from flask import Flask, request, jsonify
+    _flask_module = importlib.import_module("flask")
+    request = _flask_module.request
+    jsonify = _flask_module.jsonify
     FLASK_AVAILABLE = True
 except ImportError:
+    request = None
+    jsonify = None
     FLASK_AVAILABLE = False
+
+try:
+    _starlette_requests_module = importlib.import_module("starlette.requests")
+    StarletteRequest = getattr(_starlette_requests_module, "Request")
+except ImportError:
+    class StarletteRequest:
+        pass
 
 class AutoRouter:
     """
@@ -67,6 +80,13 @@ class AutoRouter:
         self._is_view_cache:   Dict[str, bool]           = {}  # Cache para saber se é View
         self._query_cache:     Dict[str, tuple]          = {}  # Cache de queries: {cache_key: (timestamp, data)}
         self._cache_ttl = 30  # TTL do cache em segundos
+
+        cache_config = self.config.get('data_pulse_cache', {})
+        data_pulse_cache.configure(
+            enabled=cache_config.get('enabled', True),
+            default_ttl=cache_config.get('ttl', 45),
+            max_entries=cache_config.get('max_entries', 2000)
+        )
         
         # WebSocket Manager (DESABILITADO por padrão - use enable_websocket=True no config)
         enable_ws = self.config.get('enable_websocket', False)
@@ -74,13 +94,11 @@ class AutoRouter:
         print(f'[AutoRouter]   - enable_websocket no config: {enable_ws}')
         print(f'[AutoRouter]   - app fornecido: {app is not None}')
         print(f'[AutoRouter]   - socketio fornecido: {socketio is not None}')
-        self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws) if app else None
+        self.ws_manager = WebSocketManager(app, socketio, enabled=enable_ws, config=self.config.get('websocket', {})) if (app or socketio) else None
         print(f'[AutoRouter]   - ws_manager criado: {self.ws_manager is not None}')
         
-        # Registra rotas Flask automaticamente se app foi fornecido
+        # Registra rotas automaticamente se um app compatível foi fornecido
         if self.app and self.enabled:
-            if not FLASK_AVAILABLE:
-                raise ImportError("Flask não está disponível. Instale com: pip install flask")
             self._register_routes()        
 
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
@@ -151,7 +169,7 @@ class AutoRouter:
 
                 return func(**bound.arguments)
             except Exception as e:                                                
-                print(f"{SystemController.custom_text("PRE_HANDLE", 'red')}\n{e}")
+                print(f"{SystemController.custom_text('PRE_HANDLE', 'red')}\n{e}")
                 traceback.print_exc()
                 return {"status": 500, "error": f"Decorator error: {str(e)}"}
         
@@ -251,73 +269,151 @@ class AutoRouter:
         # Se WERKZEUG_RUN_MAIN == 'true', estamos no processo recarregado
         # Este é o processo que realmente executa a aplicação
         return werkzeug_main == 'true'
-    
-    def _register_routes(self):
-        """
-        Registra automaticamente todas as rotas Flask para as tabelas descobertas.
-        """
+
+    def _detect_app_adapter(self) -> str:
+        """Identifica o estilo de registro de rotas do app recebido."""
         if not self.app:
+            return "none"
+
+        if hasattr(self.app, "add_api_route"):
+            return "fastapi"
+        if hasattr(self.app, "add_route"):
+            return "starlette"
+        if hasattr(self.app, "route"):
+            return "flask"
+        if hasattr(self.app, "register_route"):
+            return "generic"
+
+        return "unsupported"
+
+    def _append_query_value(self, target: Dict[str, Any], key: str, value: Any):
+        """Preserva chaves repetidas convertendo o valor em lista quando necessário."""
+        if key not in target:
+            target[key] = value
             return
-        
-        suffix = self.config.get('url_suffix', 'manager').strip('/')
-        tables = self._discover_tables()
-        
-        if not tables:
-            return
-        
-        total_routes = 0
-        
-        # Registra rota de múltiplas tabelas: GET /manager?tbls=Products,Categories
-        @self.app.route(f"/{suffix}", methods=['GET'], endpoint="multi_table_get")
-        def multi_get():
-            query_params = request.args.to_dict(flat=False)  # Preserva múltiplos valores
-            # Converte para dict simples se necessário
-            params_dict = {}
-            for k, v in query_params.items():
-                params_dict[k] = v[0] if len(v) == 1 else v
-            
+
+        existing = target[key]
+        if isinstance(existing, list):
+            existing.append(value)
+        else:
+            target[key] = [existing, value]
+
+    def _normalize_query_params(self, query_params: Any) -> Dict[str, Any]:
+        """Normaliza query params para dict simples, preservando chaves repetidas."""
+        normalized: Dict[str, Any] = {}
+
+        if not query_params:
+            return normalized
+
+        if hasattr(query_params, "lists"):
+            for key, values in query_params.lists():
+                if not values:
+                    normalized[key] = ""
+                elif len(values) == 1:
+                    normalized[key] = values[0]
+                else:
+                    normalized[key] = list(values)
+            return normalized
+
+        if hasattr(query_params, "multi_items"):
+            for key, value in query_params.multi_items():
+                self._append_query_value(normalized, key, value)
+            return normalized
+
+        if hasattr(query_params, "items"):
+            for key, value in query_params.items():
+                normalized[key] = value
+            return normalized
+
+        if isinstance(query_params, dict):
+            return dict(query_params)
+
+        return normalized
+
+    async def _extract_request_body(self, request_obj: Any) -> Dict[str, Any]:
+        """Extrai JSON do request de forma compatível com Flask/ASGI."""
+        if request_obj is None:
+            return {}
+
+        if hasattr(request_obj, "get_json"):
+            try:
+                return request_obj.get_json(force=True, silent=True) or {}
+            except Exception:
+                return {}
+
+        if hasattr(request_obj, "json"):
+            try:
+                body = request_obj.json()
+                if inspect.isawaitable(body):
+                    body = await body
+                return body or {}
+            except Exception:
+                return {}
+
+        return {}
+
+    def _get_json_response_class(self):
+        """Carrega JSONResponse sob demanda para FastAPI/Starlette."""
+        for module_name in ("fastapi.responses", "starlette.responses"):
+            try:
+                module = importlib.import_module(module_name)
+                return getattr(module, "JSONResponse")
+            except (ImportError, AttributeError):
+                continue
+        return None
+
+    def _build_framework_response(self, result: Dict[str, Any], adapter: str):
+        """Converte o dict padrão do AutoRouter para a resposta esperada pelo framework."""
+        payload = dict(result)
+        status = payload.pop("status", 200)
+
+        if adapter == "flask":
+            if not FLASK_AVAILABLE or jsonify is None:
+                raise ImportError("Flask não está disponível. Instale com: pip install flask")
+            return jsonify(payload), status
+
+        response_class = self._get_json_response_class()
+        if response_class is not None:
+            return response_class(content=payload, status_code=status)
+
+        return payload, status
+
+    def _build_route_base(self, suffix: str, table_name: Optional[str] = None) -> str:
+        """Monta o path base de rota sem duplicar barras."""
+        parts = [part.strip("/") for part in (suffix, table_name) if part]
+        return "/" + "/".join(parts)
+
+    def _build_detail_route(self, base_route: str, adapter: str) -> str:
+        """Monta o path de detalhe conforme a sintaxe do framework."""
+        if adapter == "flask":
+            return f"{base_route}/<path:resource_path>"
+        return f"{base_route}/{{resource_path:path}}"
+
+    def _make_multi_route_handler(self, adapter: str):
+        """Cria handler para GET múltiplo conforme o framework."""
+        if adapter == "flask":
+            def multi_get():
+                params_dict = self._normalize_query_params(request.args)
+                result = self.handle_multi_get(params_dict)
+                return self._build_framework_response(result, adapter)
+
+            return multi_get
+
+        async def multi_get(request_obj: StarletteRequest):
+            params_dict = self._normalize_query_params(getattr(request_obj, "query_params", {}))
             result = self.handle_multi_get(params_dict)
-            status = result.pop('status', 200)
-            return jsonify(result), status
-        
-        total_routes += 1
-        
-        for table_name in tables:
-            table_upper = table_name.upper()
-            table_config = self._tables_config.get(table_upper, {})
-            
-            # Views: apenas GET permitido
-            is_view = self._is_view_cache.get(table_upper, False)
-            if is_view:
-                allowed_methods = ["GET"]
-            else:
-                allowed_methods = table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
-            
-            # Cria closures para cada tabela (evita problema de binding tardio)
-            routes_count = self._register_table_routes(table_name, allowed_methods, suffix)
-            total_routes += routes_count
-        
-        # Imprime apenas no processo recarregado do Flask (evita duplicação)
-        if self._should_print_logs():
-            print(f"{SystemController.custom_text('[AutoRouter]', 'green')} {total_routes} rotas registradas (/{suffix}/)")
-    
-    def _register_table_routes(self, table_name: str, allowed_methods: List[str], suffix: str) -> int:
-        """
-        Registra rotas Flask para uma tabela específica.
-        Retorna o número de rotas criadas.
-        """
-        routes_created = 0
-        # Rota para lista/criação: /{suffix}/{table}
-        base_route = f"/{suffix}/{table_name}"
-        list_methods = [m for m in ['GET', 'POST'] if m in allowed_methods]
-        
-        if list_methods:
-            @self.app.route(base_route, methods=list_methods, endpoint=f"{table_name}_list")
+            return self._build_framework_response(result, adapter)
+
+        return multi_get
+
+    def _make_table_list_handler(self, table_name: str, adapter: str):
+        """Cria handler para rotas de listagem/criação."""
+        if adapter == "flask":
             def table_list():
                 method = request.method
-                query_params = request.args.to_dict()
+                query_params = self._normalize_query_params(request.args)
                 body = request.get_json(force=True, silent=True) or {}
-                
+
                 result = self.handle_request(
                     method=method,
                     table_name=table_name,
@@ -325,26 +421,37 @@ class AutoRouter:
                     query_params=query_params,
                     body=body
                 )
-                
-                status = result.pop('status', 200)
-                return jsonify(result), status
-            
-            routes_created += len(list_methods)
-        
-        # Rota para operações com ID: /{suffix}/{table}/{id}
-        detail_route = f"{base_route}/<path:resource_path>"
-        detail_methods = [m for m in ['GET', 'PATCH', 'DELETE'] if m in allowed_methods]
-        
-        if detail_methods:
-            @self.app.route(detail_route, methods=detail_methods, endpoint=f"{table_name}_detail")
+
+                return self._build_framework_response(result, adapter)
+
+            return table_list
+
+        async def table_list(request_obj: StarletteRequest):
+            method = getattr(request_obj, "method", "GET")
+            query_params = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            body = await self._extract_request_body(request_obj)
+
+            result = self.handle_request(
+                method=method,
+                table_name=table_name,
+                path_parts=[],
+                query_params=query_params,
+                body=body
+            )
+
+            return self._build_framework_response(result, adapter)
+
+        return table_list
+
+    def _make_table_detail_handler(self, table_name: str, adapter: str):
+        """Cria handler para rotas de detalhe/custom route."""
+        if adapter == "flask":
             def table_detail(resource_path):
                 method = request.method
-                query_params = request.args.to_dict()
+                query_params = self._normalize_query_params(request.args)
                 body = request.get_json(force=True, silent=True) or {}
-                
-                # Divide o path (pode ser ID ou rota customizada)
                 path_parts = resource_path.split('/') if resource_path else []
-                
+
                 result = self.handle_request(
                     method=method,
                     table_name=table_name,
@@ -352,13 +459,350 @@ class AutoRouter:
                     query_params=query_params,
                     body=body
                 )
-                
-                status = result.pop('status', 200)
-                return jsonify(result), status
-            
-            routes_created += len(detail_methods)
-        
-        return routes_created
+
+                return self._build_framework_response(result, adapter)
+
+            return table_detail
+
+        async def table_detail(resource_path: str = "", request_obj: StarletteRequest = None):
+            method = getattr(request_obj, "method", "GET") if request_obj is not None else "GET"
+            query_params = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            body = await self._extract_request_body(request_obj)
+            path_parts = resource_path.split('/') if resource_path else []
+
+            result = self.handle_request(
+                method=method,
+                table_name=table_name,
+                path_parts=path_parts,
+                query_params=query_params,
+                body=body
+            )
+
+            return self._build_framework_response(result, adapter)
+
+        return table_detail
+
+    def get_route_definitions(self) -> List[Dict[str, Any]]:
+        """Expõe a malha de rotas para apps customizados ou registro manual."""
+        if not self.enabled:
+            return []
+
+        suffix = self.config.get('url_suffix', 'manager').strip('/')
+        tables = self._discover_tables()
+
+        adapter = self._detect_app_adapter()
+        route_definitions = [
+            {
+                "path": self._build_route_base(suffix),
+                "methods": ["GET"],
+                "endpoint": "multi_table_get",
+                "handler": self._make_multi_route_handler(adapter),
+            }
+        ]
+        route_definitions.extend(self._get_lookup_route_definitions(suffix, adapter))
+
+        if not tables:
+            return route_definitions
+
+        for table_name in tables:
+            table_upper = table_name.upper()
+            table_config = self._tables_config.get(table_upper, {})
+            is_view = self._is_view_cache.get(table_upper, False)
+            allowed_methods = ["GET"] if is_view else table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
+
+            route_definitions.extend(self._get_table_route_definitions(table_name, allowed_methods, suffix, adapter))
+
+        return route_definitions
+
+    def _get_table_route_definitions(self, table_name: str, allowed_methods: List[str], suffix: str, adapter: str) -> List[Dict[str, Any]]:
+        """Monta definições de rota por tabela sem acoplar ao framework."""
+        base_route = self._build_route_base(suffix, table_name)
+        route_definitions: List[Dict[str, Any]] = []
+
+        list_methods = [method for method in ["GET", "POST"] if method in allowed_methods]
+        if list_methods:
+            route_definitions.append(
+                {
+                    "path": base_route,
+                    "methods": list_methods,
+                    "endpoint": f"{table_name}_list",
+                    "handler": self._make_table_list_handler(table_name, adapter),
+                }
+            )
+
+        detail_methods = [method for method in ["GET", "PATCH", "DELETE"] if method in allowed_methods]
+        if detail_methods:
+            route_definitions.append(
+                {
+                    "path": self._build_detail_route(base_route, adapter),
+                    "methods": detail_methods,
+                    "endpoint": f"{table_name}_detail",
+                    "handler": self._make_table_detail_handler(table_name, adapter),
+                }
+            )
+
+        return route_definitions
+
+    def _get_lookup_route_definitions(self, suffix: str, adapter: str) -> List[Dict[str, Any]]:
+        route_definitions: List[Dict[str, Any]] = []
+
+        for route_name, lookup_config in self._get_lookup_configs().items():
+            path = lookup_config.get("path")
+            if not path:
+                path = self._build_route_base(suffix, route_name)
+            elif not str(path).startswith("/"):
+                path = "/" + str(path).strip("/")
+
+            route_definitions.append(
+                {
+                    "path": path,
+                    "methods": ["GET"],
+                    "endpoint": f"{route_name.replace('-', '_')}_lookup",
+                    "handler": self._make_lookup_handler(route_name, adapter),
+                }
+            )
+
+        return route_definitions
+
+    def _get_lookup_configs(self) -> Dict[str, Dict[str, Any]]:
+        configs: Dict[str, Dict[str, Any]] = {}
+        raw_configs = self.config.get("lookup_routes", {})
+
+        if isinstance(raw_configs, dict):
+            for route_name, route_config in raw_configs.items():
+                if isinstance(route_config, dict):
+                    cfg = dict(route_config)
+                    cfg.setdefault("route", route_name)
+                    configs[str(route_name).strip("/")] = cfg
+
+        if isinstance(raw_configs, list):
+            for route_config in raw_configs:
+                if not isinstance(route_config, dict):
+                    continue
+                route_name = route_config.get("route") or route_config.get("name")
+                if route_name:
+                    configs[str(route_name).strip("/")] = dict(route_config)
+
+        for table_name, table_config in self.config.get("tables", {}).items():
+            lookup_config = table_config.get("lookup") if isinstance(table_config, dict) else None
+            if isinstance(lookup_config, dict):
+                route_name = lookup_config.get("route", f"{table_name.lower()}-lookup")
+                cfg = dict(lookup_config)
+                cfg.setdefault("table", lookup_config.get("source_table", table_name))
+                cfg.setdefault("route", route_name)
+                configs[str(route_name).strip("/")] = cfg
+
+        return configs
+
+    def _make_lookup_handler(self, route_name: str, adapter: str):
+        if adapter == "flask":
+            def lookup_handler():
+                params_dict = self._normalize_query_params(request.args)
+                result = self.handle_lookup(route_name, params_dict)
+                return self._build_framework_response(result, adapter)
+
+            return lookup_handler
+
+        async def lookup_handler(request_obj: StarletteRequest):
+            params_dict = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            result = self.handle_lookup(route_name, params_dict)
+            return self._build_framework_response(result, adapter)
+
+        return lookup_handler
+
+    def _is_safe_lookup_identifier(self, value: str) -> bool:
+        if not value:
+            return False
+        pattern = r"^\[?[A-Za-z_][A-Za-z0-9_]*\]?(?:\.\[?[A-Za-z_][A-Za-z0-9_]*\]?)*$"
+        return bool(re.match(pattern, value))
+
+    def _normalize_lookup_identifiers(self, values: List[str], field_name: str) -> List[str]:
+        normalized = []
+        for value in values:
+            value = str(value).strip()
+            if not self._is_safe_lookup_identifier(value):
+                raise ValueError(f"Identificador inválido em {field_name}: {value}")
+            normalized.append(value)
+        return normalized
+
+    def _lookup_list(self, value: Any) -> List[Any]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return list(value)
+
+    def _get_parameter_marker(self) -> str:
+        return "%s" if getattr(self.db, "db_type", "").lower() == "mysql" else "?"
+
+    def _lookup_table_clause(self, table_name: str) -> str:
+        table_name = str(table_name).strip()
+        if not self._is_safe_lookup_identifier(table_name):
+            raise ValueError(f"Tabela inválida para lookup: {table_name}")
+        if getattr(self.db, "db_type", "").lower() == "mysql":
+            return table_name
+        return f"{table_name} WITH (NOLOCK)"
+
+    def _lookup_page_query(self, base_query: str, params: List[Any], offset: int, limit: int) -> tuple:
+        marker = self._get_parameter_marker()
+        if getattr(self.db, "db_type", "").lower() == "mysql":
+            return f"{base_query} LIMIT {marker} OFFSET {marker}", tuple(params + [limit, offset])
+        return f"{base_query} OFFSET {marker} ROWS FETCH NEXT {marker} ROWS ONLY", tuple(params + [offset, limit])
+
+    def handle_lookup(self, route_name: str, query_params: Dict[str, Any]) -> Dict[str, Any]:
+        lookup_config = self._get_lookup_configs().get(str(route_name).strip("/"))
+        if not lookup_config:
+            return {"status": 404, "error": f"Lookup '{route_name}' not found"}
+        return self._execute_lookup(route_name, query_params, lookup_config)
+
+    def _execute_lookup(self, route_name: str, query_params: Dict[str, Any], lookup_config: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            try:
+                limit = int(query_params.get("limit", "0") or "0")
+            except Exception:
+                limit = 0
+            try:
+                page = int(query_params.get("page", "1") or "1")
+            except Exception:
+                page = 1
+
+            batch = str(query_params.get("batch", "")).lower() in ("1", "true", "yes")
+            query_text = str(query_params.get("q") or "").strip()
+
+            table_name = lookup_config.get("source_table") or lookup_config.get("table")
+            if not table_name:
+                return {"status": 400, "error": "Lookup sem tabela configurada"}
+            if str(table_name).upper() in self._exclude_tables:
+                return {"status": 404, "error": f"Table '{table_name}' access is restricted"}
+
+            columns = lookup_config.get("columns") or []
+            search_columns = lookup_config.get("search_columns") or lookup_config.get("search") or []
+            order_by = lookup_config.get("order_by") or "RECID"
+
+            columns = self._normalize_lookup_identifiers(self._lookup_list(columns), "columns")
+            search_columns = self._normalize_lookup_identifiers(self._lookup_list(search_columns), "search_columns")
+            order_by = self._normalize_lookup_identifiers([order_by], "order_by")[0]
+
+            if not columns:
+                return {"status": 400, "error": "Lookup sem colunas configuradas"}
+
+            marker = self._get_parameter_marker()
+            params = []
+            where_clause = ""
+            if query_text and search_columns:
+                where_clause = " WHERE " + " OR ".join([f"{column} LIKE {marker}" for column in search_columns])
+                like_text = f"%{query_text}%"
+                params = [like_text for _ in search_columns]
+
+            table_clause = self._lookup_table_clause(table_name)
+            base_query = f"SELECT {', '.join(columns)} FROM {table_clause}{where_clause} ORDER BY {order_by}"
+            cache_key = data_pulse_cache.make_query_key(
+                [table_name],
+                "lookup",
+                {
+                    "route": route_name,
+                    "query": base_query,
+                    "params": tuple(params),
+                    "limit": limit,
+                    "page": page,
+                    "batch": batch,
+                }
+            )
+
+            cached_response = data_pulse_cache.get(table_name, cache_key)
+            if cached_response is not None:
+                return cached_response
+
+            rows = []
+            with self.db.transaction() as lookup_db:
+                if limit > 0:
+                    offset = (max(page, 1) - 1) * max(limit, 1)
+                    query, page_params = self._lookup_page_query(base_query, params, offset, limit)
+                    rows = lookup_db.doQuery(query, page_params)
+                else:
+                    batch_size = int(lookup_config.get("batch_size", 1000) or 1000)
+                    offset = 0
+                    while True:
+                        query, page_params = self._lookup_page_query(base_query, params, offset, batch_size)
+                        batch_rows = lookup_db.doQuery(query, page_params)
+                        if not batch_rows:
+                            break
+                        rows.extend(batch_rows)
+                        if len(batch_rows) < batch_size:
+                            break
+                        offset += batch_size
+
+                total = None
+                if batch:
+                    try:
+                        count_query = f"SELECT COUNT(*) FROM {table_clause}{where_clause}"
+                        count_rows = lookup_db.doQuery(count_query, tuple(params))
+                        total = count_rows[0][0] if count_rows else 0
+                    except Exception:
+                        total = None
+
+            result = []
+            for row in rows:
+                result.append({column.strip("[]"): row[index] for index, column in enumerate(columns)})
+
+            response = {"status": 200, "data": result}
+            if total is not None:
+                response["total"] = total
+
+            data_pulse_cache.set(table_name, cache_key, response, ttl=lookup_config.get("ttl"))
+            return response
+        except Exception as e:
+            return {"status": 500, "error": str(e)}
+
+    def _register_route_definition(self, route_definition: Dict[str, Any], adapter: str):
+        """Registra uma rota no app conforme a API do framework."""
+        path = route_definition["path"]
+        methods = route_definition["methods"]
+        endpoint = route_definition["endpoint"]
+        handler = route_definition["handler"]
+        handler.__name__ = endpoint
+
+        if adapter == "flask":
+            self.app.route(path, methods=methods, endpoint=endpoint)(handler)
+            return
+
+        if adapter == "fastapi":
+            self.app.add_api_route(path, handler, methods=methods, name=endpoint)
+            return
+
+        if adapter == "starlette":
+            self.app.add_route(path, handler, methods=methods, name=endpoint)
+            return
+
+        if adapter == "generic":
+            self.app.register_route(path=path, methods=methods, endpoint=endpoint, handler=handler)
+            return
+
+        raise TypeError(
+            "Unsupported app type for AutoRouter. Use Flask/FastAPI/Starlette or consuma get_route_definitions() manualmente."
+        )
+    
+    def _register_routes(self):
+        """
+        Registra automaticamente todas as rotas no app compatível para as tabelas descobertas.
+        """
+        if not self.app:
+            return
+
+        adapter = self._detect_app_adapter()
+        route_definitions = self.get_route_definitions()
+        if not route_definitions:
+            return
+
+        total_routes = 0
+
+        for route_definition in route_definitions:
+            self._register_route_definition(route_definition, adapter)
+            total_routes += len(route_definition["methods"])
+
+        suffix = self.config.get('url_suffix', 'manager').strip('/')
+        if self._should_print_logs():
+            print(f"{SystemController.custom_text('[AutoRouter]', 'green')} {total_routes} rotas registradas (/{suffix}/)")
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Matheus / created: 27/02/2026 '''
 
     def _get_field_map(self) -> Dict[str, str]:
@@ -454,7 +898,7 @@ class AutoRouter:
                 case _:
                     return {"status": 405, "error": "Method not supported"}
         except Exception as e:                        
-            print(f"{SystemController.custom_text("HANDLE_REQUEST", 'red')}\n{e}")
+            print(f"{SystemController.custom_text('HANDLE_REQUEST', 'red')}\n{e}")
             traceback.print_exc()
             return {"status": 500, "error": f"Internal Server Error: {str(e)}"}
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
@@ -601,11 +1045,24 @@ class AutoRouter:
             if mode == 'batch' and not path_parts:
                 return self._handle_get_batch(table, params, config, field_map, include_relations)
 
+            if path_parts and path_parts[0].lower() == "lookup":
+                lookup_config = config.get("lookup", {}) if isinstance(config, dict) else {}
+                if not isinstance(lookup_config, dict):
+                    lookup_config = {}
+                lookup_config = dict(lookup_config)
+                lookup_config.setdefault("table", lookup_config.get("source_table", table.source_name))
+                lookup_config.setdefault("columns", list(field_map.values()))
+                lookup_config.setdefault("search_columns", list(field_map.values()))
+                return self._execute_lookup(f"{table.source_name.lower()}-lookup", params, lookup_config)
+
             # Rota: GET /{table}/{id}
             if path_parts and path_parts[0].isdigit():                                
                 recid = int(path_parts[0])
                 if table.exists(table.RECID == recid):
-                    table.select().where(table.RECID == recid).execute()
+                    select_query = table.select().where(table.RECID == recid)
+                    if include_relations and relation_names:
+                        select_query = select_query.with_relations(*relation_names)
+                    select_query.execute()
                     if include_relations and relation_names:
                         # Relations recursivas quando relations=true
                         self._fetch_relations_via_custom_select(table, table.records, recursive=True, max_depth=3)                        
@@ -616,7 +1073,7 @@ class AutoRouter:
                 return {"status": 404, "error": "Record not found"}
             
         except Exception as e:
-            print(f"{SystemController.custom_text("HANDLE_GET", 'red')}\n{e}")
+            print(f"{SystemController.custom_text('HANDLE_GET', 'red')}\n{e}")
             traceback.print_exc()            
             raise    
 
@@ -630,6 +1087,8 @@ class AutoRouter:
                         condition = self._evaluate_condition(route.get('where', '1==1'))
 
                         select_query = table.select().where(condition)
+                        if include_relations and relation_names:
+                            select_query = select_query.with_relations(*relation_names)
                         
                         if 'columns' in route:
                             cols = [getattr(table, c) for c in route['columns'] if hasattr(table, c)]
@@ -704,6 +1163,8 @@ class AutoRouter:
         
         # USA O MÉTODO OTIMIZADO DO CONTROLLER (com cache de 60s)
         select_query = table.paginate(page=page, limit=limit, where=where_condition)
+        if include_relations and relation_names:
+            select_query = select_query.with_relations(*relation_names)
         select_query.execute()
         if include_relations and relation_names:
             # Relations recursivas quando relations=true
@@ -865,7 +1326,10 @@ class AutoRouter:
             offset = (page - 1) * batch_size
             
             # Fetch batch
-            table.paginate(page=page, limit=batch_size, where=where_condition).execute()
+            select_query = table.paginate(page=page, limit=batch_size, where=where_condition)
+            if include_relations and relation_names:
+                select_query = select_query.with_relations(*relation_names)
+            select_query.execute()
             
             # Relations (se requisitado)
             if include_relations and relation_names and table.records:
@@ -1215,7 +1679,7 @@ class AutoRouter:
                     # Filtra os records da relation que pertencem a este record
                     filtered_records = [
                         rec for rec in relation_manager.records 
-                        if rec.get(target_field_name) == source_value
+                        if (rec.get(target_field_name) if isinstance(rec, dict) else getattr(rec, target_field_name, None)) == source_value
                     ]
                     
                     if filtered_records:

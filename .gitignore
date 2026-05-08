@@ -5,6 +5,7 @@ __pycache__/
 
 .env
 .vscode/
+src/
 
 # SQLManager - Build Ofuscado (NÃO commitar)
 build/

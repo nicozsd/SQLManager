@@ -11,6 +11,7 @@ from .ViewController    import ViewController
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 12/03/2026 '''
 from .WebSocketManager  import WebSocketManager
 ''' [END CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 12/03/2026 '''
+from .DataPulseCache    import DataPulseCache, data_pulse_cache
 
 from.databaseWatchController import DatabaseWatcher
 
@@ -22,6 +23,8 @@ __all__ = [
     'SystemController',
     'NumberSequenceController',
     'WebSocketManager',
+    'DataPulseCache',
+    'data_pulse_cache',
     'DatabaseWatcher'
 ]
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''

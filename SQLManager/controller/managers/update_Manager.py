@@ -5,6 +5,7 @@ from typing    import Optional, Union, Callable, TYPE_CHECKING
 
 from ..BaseEnumController  import BaseEnumController
 from ..EDTController       import EDTController
+from ..DataPulseCache      import data_pulse_cache
 
 from ._conditions_Managers import FieldCondition, BinaryExpression
 
@@ -75,6 +76,8 @@ class UpdateManager:
             with controller.db.transaction() as trs:
                 trs.executeCommand(query, tuple(values))                        
             
+            data_pulse_cache.invalidate_controller(controller)
+
             recid_instance = controller._get_field_instance('RECID')
             controller.select().where(recid_instance == recid_instance.value).limit(1).do_update(False).execute()
 
@@ -128,6 +131,8 @@ class UpdateManager:
         try:
             with controller.db.transaction() as trs:                
                 affected_rows = trs.executeCommand(query, tuple(values))          
+            if affected_rows:
+                data_pulse_cache.invalidate_controller(controller)
             return affected_rows
         except Exception as error:            
             raise Exception(f"Erro ao atualizar registros em massa: {error}")

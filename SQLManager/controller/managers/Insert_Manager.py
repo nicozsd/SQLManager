@@ -5,6 +5,7 @@ from typing    import Any, Optional, Union, Callable, List, Dict, TYPE_CHECKING
 
 from ..BaseEnumController  import BaseEnumController
 from ..EDTController       import EDTController
+from ..DataPulseCache      import data_pulse_cache
 
 if TYPE_CHECKING:
     from ..TableController import TableController
@@ -159,6 +160,9 @@ class InsertRecordsetManager:
                     # Inserção normal sem filtro
                     affected_rows = self._insert_all()
                         
+            if affected_rows:
+                data_pulse_cache.invalidate_controller(self._controller)
+
             return affected_rows
         except Exception as error:            
             raise Exception(f"Erro ao inserir registros em massa: {error}")
@@ -284,6 +288,8 @@ class InsertManager:
             with controller.db.transaction() as trs:            
                 new_recid = controller.execute_insert_and_get_id(trs, query, tuple(values))
             ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+
+            data_pulse_cache.invalidate_controller(controller)
 
             if new_recid is not None:
                 recid_instance = controller._get_field_instance('RECID')

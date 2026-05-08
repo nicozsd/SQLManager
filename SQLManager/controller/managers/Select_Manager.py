@@ -6,6 +6,7 @@ from typing import Any, List, Dict, Optional, Union, TYPE_CHECKING
 
 from ..BaseEnumController  import BaseEnumController
 from ..EDTController       import EDTController
+from ..DataPulseCache      import data_pulse_cache
 
 from ._conditions_Managers import FieldCondition, BinaryExpression
 
@@ -397,21 +398,36 @@ class SelectManager:
         if self._limit is not None and self._limit > 0:
             query += self._controller.format_pagination(limit, offset)
         
-        ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
-        # Executa a query usando o método apropriado do banco
-        with self._controller.db.transaction() as trs:            
-            if hasattr(trs, 'doQuery'):
-                rows = trs.doQuery(query, tuple(values))
-            elif hasattr(trs, 'execute'):
-                result = trs.execute(query, tuple(values))
-                # Se retornar cursor, faz fetchall, senão assume que já é a lista
-                rows = result.fetchall() if hasattr(result, 'fetchall') else result
-            elif hasattr(trs, 'executeCommand'):
-                cursor = trs.executeCommand(query, tuple(values))
-                rows = cursor.fetchall() if cursor else []
-            else:
-                raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
-        ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
+        cache_tables = [self._controller.source_name]
+        cache_tables.extend([ctrl.source_name for ctrl, _ in join_controllers])
+        cache_key = data_pulse_cache.make_query_key(
+            cache_tables,
+            "select",
+            {
+                "query": query,
+                "values": tuple(values),
+                "columns": columns,
+                "update": self._do_update,
+            }
+        )
+        can_use_cache = data_pulse_cache.enabled and not getattr(self._controller, "isUpdate", False)
+        rows = data_pulse_cache.get(self._controller.source_name, cache_key) if can_use_cache else None
+
+        if rows is None:
+            with self._controller.db.transaction() as trs:
+                if hasattr(trs, 'doQuery'):
+                    rows = trs.doQuery(query, tuple(values))
+                elif hasattr(trs, 'execute'):
+                    result = trs.execute(query, tuple(values))
+                    rows = result.fetchall() if hasattr(result, 'fetchall') else result
+                elif hasattr(trs, 'executeCommand'):
+                    cursor = trs.executeCommand(query, tuple(values))
+                    rows = cursor.fetchall() if cursor else []
+                else:
+                    raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
+
+            if can_use_cache:
+                data_pulse_cache.set(self._controller.source_name, cache_key, [tuple(row) for row in rows])
 
         if has_aggregates or self._group_by or self._group_by is not None:
             results = self._process_aggregate_results(rows, columns, table_columns)

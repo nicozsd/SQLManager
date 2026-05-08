@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" width="760" height="200">
+  <defs>
+    <!-- Backgrounds -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080c14"/>
+      <stop offset="100%" stop-color="#0d1424"/>
+    </linearGradient>
+    <!-- Main accent: cyan → violet -->
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <!-- Icon fill gradient -->
+    <linearGradient id="iconFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1af0ff"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+    <!-- Text SQL gradient -->
+    <linearGradient id="sqlGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <!-- Radial glow behind icon -->
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#00e5ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="haloRight" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Glow filters -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <filter id="titleGlow" x="-10%" y="-40%" width="120%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- ── Background ── -->
+  <rect width="760" height="200" rx="20" fill="url(#bg)"/>
+
+  <!-- Subtle dot grid -->
+  <g opacity="0.07">
+    <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#4a9eff"/>
+    </pattern>
+    <rect width="760" height="200" rx="20" fill="url(#dots)"/>
+  </g>
+
+  <!-- Halo glow blobs -->
+  <ellipse cx="100" cy="100" rx="90" ry="90" fill="url(#halo)" filter="url(#softGlow)"/>
+  <ellipse cx="660" cy="100" rx="80" ry="80" fill="url(#haloRight)" filter="url(#softGlow)"/>
+
+  <!-- ── Icon Area ── -->
+  <!-- Outer ring glow -->
+  <circle cx="100" cy="100" r="58" fill="none" stroke="#00e5ff" stroke-width="1" opacity="0.12"/>
+  <circle cx="100" cy="100" r="46" fill="none" stroke="#00e5ff" stroke-width="1" opacity="0.18"/>
+
+  <!-- Database cylinder — body -->
+  <g filter="url(#glow)" transform="translate(100,100)">
+    <!-- Cylinder sides -->
+    <rect x="-26" y="-22" width="52" height="44" rx="2" fill="url(#iconFill)" opacity="0.18"/>
+    <!-- Bottom cap -->
+    <ellipse cx="0" cy="22" rx="26" ry="8" fill="url(#iconFill)" opacity="0.7"/>
+    <!-- Body fill left wall -->
+    <rect x="-26" y="-22" width="52" height="44" fill="url(#iconFill)" opacity="0.1"/>
+    <!-- Top cap (brightest) -->
+    <ellipse cx="0" cy="-22" rx="26" ry="8" fill="#00e5ff" opacity="0.9"/>
+    <!-- Mid ring 1 -->
+    <ellipse cx="0" cy="-4" rx="26" ry="8" fill="none" stroke="#00e5ff" stroke-width="1.2" opacity="0.55"/>
+    <!-- Mid ring 2 -->
+    <ellipse cx="0" cy="10" rx="26" ry="8" fill="none" stroke="#7c3aed" stroke-width="1" opacity="0.45"/>
+    <!-- Shine on top -->
+    <ellipse cx="-7" cy="-24" rx="9" ry="3" fill="white" opacity="0.22"/>
+    <!-- Left edge line -->
+    <line x1="-26" y1="-22" x2="-26" y2="22" stroke="url(#grad1)" stroke-width="1.5" opacity="0.5"/>
+    <!-- Right edge line -->
+    <line x1="26" y1="-22" x2="26" y2="22" stroke="url(#grad1)" stroke-width="1.5" opacity="0.5"/>
+
+    <!-- Data stream dots flowing right -->
+    <circle cx="38" cy="-12" r="2.5" fill="#00e5ff" opacity="0.9"/>
+    <circle cx="52" cy="-12" r="1.8" fill="#00e5ff" opacity="0.55"/>
+    <circle cx="63" cy="-12" r="1.2" fill="#00e5ff" opacity="0.25"/>
+
+    <circle cx="38" cy="6" r="2.2" fill="#7c3aed" opacity="0.9"/>
+    <circle cx="50" cy="6" r="1.5" fill="#7c3aed" opacity="0.5"/>
+    <circle cx="60" cy="6" r="1" fill="#7c3aed" opacity="0.2"/>
+
+    <line x1="27" y1="-12" x2="36" y2="-12" stroke="#00e5ff" stroke-width="1.2" opacity="0.6"/>
+    <line x1="27" y1="6" x2="35" y2="6" stroke="#7c3aed" stroke-width="1.2" opacity="0.6"/>
+  </g>
+
+  <!-- ── Divider ── -->
+  <rect x="186" y="52" width="2" height="96" rx="1" fill="url(#grad1)" opacity="0.55"/>
+
+  <!-- ── Typography ── -->
+
+  <!-- SQL — large, gradient, bold -->
+  <text
+    x="208" y="106"
+    font-family="'Segoe UI', 'Inter', 'Helvetica Neue', sans-serif"
+    font-size="62"
+    font-weight="900"
+    letter-spacing="-2"
+    fill="url(#sqlGrad)"
+    filter="url(#titleGlow)"
+  >SQL</text>
+
+  <!-- Manager — lighter weight, white -->
+  <text
+    x="328" y="106"
+    font-family="'Segoe UI', 'Inter', 'Helvetica Neue', sans-serif"
+    font-size="62"
+    font-weight="300"
+    letter-spacing="-2"
+    fill="white"
+    opacity="0.92"
+  >Manager</text>
+
+  <!-- Tagline -->
+  <text
+    x="209" y="128"
+    font-family="'Segoe UI', 'Inter', sans-serif"
+    font-size="13"
+    font-weight="400"
+    fill="#5d7a9e"
+    letter-spacing="1.5"
+  >DATABASE MANAGEMENT FRAMEWORK  ·  PYTHON</text>
+
+  <!-- ── Feature Pills ── -->
+  <!-- v4.0.0 -->
+  <rect x="209" y="144" width="62" height="20" rx="10" fill="#1a1f35" stroke="#7c3aed" stroke-width="1" opacity="0.9"/>
+  <text x="240" y="158" font-family="'Segoe UI', sans-serif" font-size="10.5" font-weight="600" fill="#a78bfa" text-anchor="middle">v 4.0.0</text>
+
+  <!-- AutoRouter -->
+  <rect x="280" y="144" width="74" height="20" rx="10" fill="#1a1f35" stroke="#00e5ff" stroke-width="1" opacity="0.8"/>
+  <text x="317" y="158" font-family="'Segoe UI', sans-serif" font-size="10.5" font-weight="500" fill="#38bdf8" text-anchor="middle">AutoRouter</text>
+
+  <!-- WebSocket -->
+  <rect x="363" y="144" width="74" height="20" rx="10" fill="#1a1f35" stroke="#10b981" stroke-width="1" opacity="0.8"/>
+  <text x="400" y="158" font-family="'Segoe UI', sans-serif" font-size="10.5" font-weight="500" fill="#34d399" text-anchor="middle">WebSocket</text>
+
+  <!-- Relations -->
+  <rect x="446" y="144" width="68" height="20" rx="10" fill="#1a1f35" stroke="#f59e0b" stroke-width="1" opacity="0.8"/>
+  <text x="480" y="158" font-family="'Segoe UI', sans-serif" font-size="10.5" font-weight="500" fill="#fbbf24" text-anchor="middle">Relations</text>
+
+  <!-- ORM-like -->
+  <rect x="523" y="144" width="60" height="20" rx="10" fill="#1a1f35" stroke="#ec4899" stroke-width="1" opacity="0.8"/>
+  <text x="553" y="158" font-family="'Segoe UI', sans-serif" font-size="10.5" font-weight="500" fill="#f472b6" text-anchor="middle">ORM-like</text>
+
+  <!-- ── Bottom glow bar ── -->
+  <rect x="0" y="190" width="760" height="10" rx="20" fill="url(#grad1)" opacity="0.7"/>
+  <rect x="0" y="184" width="760" height="16" rx="20" fill="url(#grad1)" opacity="0.12"/>
+</svg>

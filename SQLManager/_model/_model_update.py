@@ -62,6 +62,11 @@ class ModelUpdater(ModelUpdaterBase):
 
     def ensurer(self, ref_Path: Path, content: str):
         '''Garante que arquivo exista com conteúdo específico'''
+        if ref_Path.suffix != ".py":
+            raise ValueError(f"ensurer espera um arquivo Python, recebeu: {ref_Path}")
+
+        ref_Path.parent.mkdir(parents=True, exist_ok=True)
+
         if not ref_Path.exists():
             with open(ref_Path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -216,12 +221,12 @@ class ModelUpdater(ModelUpdaterBase):
             self._generate_model_init()
 
             utils.stepInfo("00.1", "Garantindo Enums obrigatórios")
-            for enum in self._get_values(enums):
-                self.ensurer(self.enums_path, enum)
+            for enum_name, enum_content in enums.items():
+                self.ensurer(self.enums_path / f"{enum_name}.py", enum_content)
 
             utils.stepInfo("00.2", "Garantindo EDTs obrigatórios")
-            for edt in self._get_values(EDTs):
-                self.ensurer(self.edts_path, edt)
+            for edt_name, edt_content in EDTs.items():
+                self.ensurer(self.edts_path / f"{edt_name}.py", edt_content)
 
             utils.stepInfo("00.3", "Garantindo Tables obrigatórios")
             for table in tables:
@@ -275,7 +280,7 @@ if __name__ == "__main__":
     else:
         try:
             # Tenta carregar a Janela de Interface Gráfica
-            from SQLManager._model.dialog.run import dialog
+            from .dialog.run import dialog
             app_dialog = dialog("Model Update")
             app_dialog.start()
         except Exception as e:
