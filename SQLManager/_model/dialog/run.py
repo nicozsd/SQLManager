@@ -50,6 +50,8 @@ class dialog:
         
         self.current_db_type = None
         self.require_recid_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_REQUIRE_RECID", True))
+        self.btn_test = None
+        self.btn_modelupdate = None
         
         # Inicializa a renderização da interface via herança/mixins
         self._build_ui()
@@ -91,15 +93,6 @@ class dialog:
         self.info_panel = InfoPanel()
         self.info_panel.render(main_container, fill=tk.X, pady=(0, 15))
 
-        # 3. Dashboard de Metadados
-        self.dashboard = MetadataDashboard()
-        self.dashboard.render(main_container, fill=tk.BOTH, expand=True, pady=(0, 12))
-        self._refresh_metadata()
-
-        options_frame = ttk.LabelFrame(main_container, text=" Opcoes de Runtime ", padding=12)
-        options_frame.pack(fill=tk.X, pady=(0, 15))
-        ttk.Checkbutton(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var).pack(anchor=tk.W)
-
         # 4. Botões de Ação
         buttons_frame = ttk.Frame(main_container)
         buttons_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(10, 0))
@@ -111,6 +104,16 @@ class dialog:
         self.btn_modelupdate.render(buttons_frame, side=tk.RIGHT, fill=tk.X, expand=True, padx=(5, 0))
         self.btn_modelupdate.set_state(tk.DISABLED) # Começa desabilitado
 
+        # 3. Dashboard de Metadados
+        self.dashboard = MetadataDashboard()
+        self.dashboard.render(main_container, fill=tk.BOTH, expand=True, pady=(0, 12))
+
+        options_frame = ttk.LabelFrame(main_container, text=" Opcoes de Runtime ", padding=12)
+        options_frame.pack(fill=tk.X, pady=(0, 15))
+        ttk.Checkbutton(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var).pack(anchor=tk.W)
+
+        self._refresh_metadata()
+
     @staticmethod
     def _env_bool(name: str, default: bool) -> bool:
         value = os.getenv(name)
@@ -121,6 +124,10 @@ class dialog:
     def _on_db_changed(self, selected_db: str):
         self.current_db_type = selected_db
         self._refresh_metadata()
+
+    def _set_model_update_state(self, state: str):
+        if self.btn_modelupdate is not None:
+            self.btn_modelupdate.set_state(state)
 
     def _can_query_remote_metadata(self) -> bool:
         return all([
@@ -154,7 +161,7 @@ class dialog:
         try:
             tables, views = self._get_remote_metadata()
             self._refresh_metadata(tables=tables, views=views)
-            self.btn_modelupdate.set_state(tk.NORMAL)
+            self._set_model_update_state(tk.NORMAL)
             messagebox.showinfo("Sucesso", "Conexão estabelecida com sucesso e dados obtidos!")
 
         except Exception as e:
@@ -163,7 +170,7 @@ class dialog:
                 error_msg += "\n\n[DICA DO SQLMANAGER]: O MySQL 8+ exige um pacote extra de segurança para a senha.\nAbra o seu terminal e instale rodando:\npip install cryptography"
                 
             messagebox.showerror("Erro de Conexão", f"Falha ao conectar no banco de dados:\n\n{error_msg}")
-            self.btn_modelupdate.set_state(tk.DISABLED)
+            self._set_model_update_state(tk.DISABLED)
             
         finally:
             self.btn_test.set_loading(False)
@@ -203,15 +210,15 @@ class dialog:
             if self._can_query_remote_metadata():
                 try:
                     tables, views = self._get_remote_metadata()
-                    self.btn_modelupdate.set_state(tk.NORMAL)
+                    self._set_model_update_state(tk.NORMAL)
                 except Exception:
                     tables = tables if tables is not None else []
                     views = views if views is not None else []
-                    self.btn_modelupdate.set_state(tk.DISABLED)
+                    self._set_model_update_state(tk.DISABLED)
             else:
                 tables = tables if tables is not None else []
                 views = views if views is not None else []
-                self.btn_modelupdate.set_state(tk.DISABLED)
+                self._set_model_update_state(tk.DISABLED)
 
         self.dashboard.update_data(
             tables=tables,
