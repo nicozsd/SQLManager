@@ -23,15 +23,17 @@ COLORS = {
     "input": "#0B1322",
     "input_border": "#2B3B5B",
     "checkbox_border": "#355178",
+    "list_select_bg": "#13304D",
+    "list_select_fg": "#F4F8FF",
 }
 
 FONTS = {
-    "title": ("Segoe UI Semibold", 28),
-    "subtitle": ("Segoe UI", 13),
-    "section": ("Segoe UI Semibold", 15),
-    "body": ("Segoe UI", 12),
-    "body_small": ("Segoe UI", 11),
-    "count": ("Segoe UI Semibold", 20),
-    "button": ("Segoe UI Semibold", 12),
-    "tag": ("Segoe UI Semibold", 11),
+    "title": ("Segoe UI Semibold", 24),
+    "subtitle": ("Segoe UI", 12),
+    "section": ("Segoe UI Semibold", 13),
+    "body": ("Segoe UI", 11),
+    "body_small": ("Segoe UI", 10),
+    "count": ("Segoe UI Semibold", 16),
+    "button": ("Segoe UI Semibold", 11),
+    "tag": ("Segoe UI Semibold", 10),
 }

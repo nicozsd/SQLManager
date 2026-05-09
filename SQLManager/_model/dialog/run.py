@@ -2,13 +2,15 @@ import tkinter as tk
 from tkinter import messagebox
 import os
 import sys
+import threading
 from pathlib import Path
 import customtkinter as ctk
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageTk
 except ImportError:
     Image = None
+    ImageTk = None
 
 # --- CORREÇÃO DE PATH ---
 # Garante que o Python encontre o módulo 'SQLManager' e a raiz do projeto
@@ -63,7 +65,11 @@ class dialog:
         self.btn_test = None
         self.btn_modelupdate = None
         self.brand_image = None
+        self.banner_image = None
         self.window_icon = None
+        self.remote_tables = []
+        self.remote_views = []
+        self.remote_metadata_loaded = False
         
         # Inicializa a renderização da interface via herança/mixins
         self._build_ui()
@@ -85,7 +91,20 @@ class dialog:
                 self.window_icon = tk.PhotoImage(file=str(icon_path))
                 self.root.iconphoto(False, self.window_icon)
             except Exception:
-                self.window_icon = None
+                if Image is not None and ImageTk is not None:
+                    try:
+                        self.window_icon = ImageTk.PhotoImage(Image.open(icon_path))
+                        self.root.iconphoto(False, self.window_icon)
+                    except Exception:
+                        self.window_icon = None
+                else:
+                    self.window_icon = None
+        ico_path = self._asset_path("app_icon.ico")
+        if ico_path.exists():
+            try:
+                self.root.iconbitmap(str(ico_path))
+            except Exception:
+                pass
 
     def _load_brand_image(self):
         if Image is None:
@@ -94,47 +113,74 @@ class dialog:
         if not icon_path.exists():
             return None
         try:
-            return ctk.CTkImage(light_image=Image.open(icon_path), dark_image=Image.open(icon_path), size=(88, 88))
+            image = Image.open(icon_path)
+            return ctk.CTkImage(light_image=image, dark_image=image, size=(60, 60))
+        except Exception:
+            return None
+
+    def _load_banner_image(self):
+        if Image is None:
+            return None
+        banner_path = self._asset_path("banner.png")
+        if not banner_path.exists():
+            return None
+        try:
+            image = Image.open(banner_path)
+            return ctk.CTkImage(light_image=image, dark_image=image, size=(420, 110))
         except Exception:
             return None
 
     def _build_header(self, parent):
-        header = ctk.CTkFrame(parent, fg_color=COLORS["panel"], corner_radius=24, border_width=1, border_color=COLORS["border"])
-        header.pack(fill="x", pady=(0, 18))
+        header = ctk.CTkFrame(parent, fg_color=COLORS["panel"], corner_radius=18, border_width=1, border_color=COLORS["border"])
+        header.pack(fill="x", pady=(0, 12))
         header.grid_columnconfigure(1, weight=1)
 
         self.brand_image = self._load_brand_image()
-        icon_holder = ctk.CTkFrame(header, width=110, height=110, fg_color=COLORS["panel_alt"], corner_radius=22, border_width=1, border_color=COLORS["border"])
-        icon_holder.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=18, pady=18)
+        self.banner_image = self._load_banner_image()
+        icon_holder = ctk.CTkFrame(header, width=76, height=76, fg_color=COLORS["panel_alt"], corner_radius=16, border_width=1, border_color=COLORS["border"])
+        icon_holder.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=14, pady=14)
         icon_holder.grid_propagate(False)
 
         if self.brand_image is not None:
             ctk.CTkLabel(icon_holder, text="", image=self.brand_image).pack(expand=True)
         else:
-            ctk.CTkLabel(icon_holder, text="SQL", font=("Segoe UI Black", 28), text_color=COLORS["cyan"]).pack(expand=True)
+            ctk.CTkLabel(icon_holder, text="SQL", font=("Segoe UI Black", 20), text_color=COLORS["cyan"]).pack(expand=True)
 
         text_col = ctk.CTkFrame(header, fg_color="transparent")
-        text_col.grid(row=0, column=1, sticky="nsew", padx=(0, 18), pady=(18, 8))
+        text_col.grid(row=0, column=1, sticky="nsew", padx=(0, 14), pady=(12, 6))
 
-        ctk.CTkLabel(text_col, text=APP_TITLE, font=FONTS["title"], text_color=COLORS["text"]).pack(anchor="w")
+        if self.banner_image is not None:
+            ctk.CTkLabel(text_col, text="", image=self.banner_image).pack(anchor="w")
+        else:
+            ctk.CTkLabel(text_col, text=APP_TITLE, font=FONTS["title"], text_color=COLORS["text"]).pack(anchor="w")
+
         ctk.CTkLabel(text_col, text=APP_SUBTITLE, font=FONTS["subtitle"], text_color=COLORS["cyan"] ).pack(anchor="w", pady=(4, 0))
-        ctk.CTkLabel(text_col, text=APP_DESCRIPTION, font=FONTS["body"], text_color=COLORS["muted"], justify="left", wraplength=620).pack(anchor="w", pady=(10, 0))
+        ctk.CTkLabel(text_col, text=APP_DESCRIPTION, font=FONTS["body_small"], text_color=COLORS["muted"], justify="left", wraplength=520).pack(anchor="w", pady=(6, 0))
 
         tag_row = ctk.CTkFrame(header, fg_color="transparent")
-        tag_row.grid(row=1, column=1, sticky="w", padx=(0, 18), pady=(0, 18))
+        tag_row.grid(row=1, column=1, sticky="w", padx=(0, 14), pady=(0, 12))
 
         tag_colors = [COLORS["violet"], COLORS["cyan"], COLORS["success"], COLORS["pink"]]
         for tag, color in zip(APP_TAGS, tag_colors):
-            ctk.CTkLabel(tag_row, text=tag, font=FONTS["tag"], text_color=COLORS["text"], fg_color=color, corner_radius=999, padx=12, pady=4).pack(side="left", padx=(0, 8))
+            ctk.CTkLabel(tag_row, text=tag, font=FONTS["tag"], text_color=COLORS["text"], fg_color=color, corner_radius=999, padx=10, pady=3).pack(side="left", padx=(0, 6))
 
     def _build_ui(self):
-        main_container = ctk.CTkFrame(self.root, fg_color="transparent")
-        main_container.pack(fill="both", expand=True, padx=24, pady=24)
+        main_container = ctk.CTkScrollableFrame(self.root, fg_color="transparent", corner_radius=0)
+        main_container.pack(fill="both", expand=True, padx=14, pady=14)
 
         self._build_header(main_container)
 
+        controls_row = ctk.CTkFrame(main_container, fg_color="transparent")
+        controls_row.pack(fill="x", pady=(0, 10))
+
+        controls_left = ctk.CTkFrame(controls_row, fg_color="transparent")
+        controls_left.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        controls_right = ctk.CTkFrame(controls_row, fg_color="transparent")
+        controls_right.pack(side="left", fill="x", expand=True, padx=(6, 0))
+
         self.db_selector = DBSelector(["SQL Server (SSMS)", "MySQL"], self._on_db_changed)
-        self.db_selector.render(main_container, fill="x", pady=(0, 14))
+        self.db_selector.render(controls_left, fill="x")
 
         db_env = os.getenv("DB_TYPE", "SQLSERVER").upper()
         if db_env == "MYSQL":
@@ -144,20 +190,30 @@ class dialog:
             self.db_selector.selected_value.set("SQL Server (SSMS)")
             self.current_db_type = "SQL Server (SSMS)"
 
-        self.info_panel = InfoPanel()
-        self.info_panel.render(main_container, fill="x", pady=(0, 14))
+        options_frame = ctk.CTkFrame(main_container, fg_color=COLORS["surface"], corner_radius=14, border_width=1, border_color=COLORS["border"])
+        options_frame = ctk.CTkFrame(controls_right, fg_color=COLORS["surface"], corner_radius=14, border_width=1, border_color=COLORS["border"])
+        options_frame.pack(fill="x")
+        ctk.CTkLabel(options_frame, text="Opcoes de Runtime", font=FONTS["section"], text_color=COLORS["text"]).pack(anchor="w", padx=14, pady=(12, 2))
+        ctk.CTkLabel(options_frame, text="Aplicado apenas durante a geracao.", font=FONTS["body_small"], text_color=COLORS["muted"]).pack(anchor="w", padx=14, pady=(0, 8))
+        ctk.CTkCheckBox(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var, onvalue=True, offvalue=False, font=FONTS["body_small"], text_color=COLORS["text"], fg_color=COLORS["violet"], hover_color=COLORS["violet_hover"], border_color=COLORS["checkbox_border"], checkmark_color=COLORS["text"]).pack(anchor="w", padx=14, pady=(0, 12))
 
-        options_frame = ctk.CTkFrame(main_container, fg_color=COLORS["surface"], corner_radius=18, border_width=1, border_color=COLORS["border"])
-        options_frame.pack(fill="x", pady=(0, 14))
-        ctk.CTkLabel(options_frame, text="Opcoes de Runtime", font=FONTS["section"], text_color=COLORS["text"]).pack(anchor="w", padx=18, pady=(16, 4))
-        ctk.CTkLabel(options_frame, text="Controle aplicado apenas durante a geracao dos models.", font=FONTS["body_small"], text_color=COLORS["muted"]).pack(anchor="w", padx=18, pady=(0, 10))
-        ctk.CTkCheckBox(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var, onvalue=True, offvalue=False, font=FONTS["body"], text_color=COLORS["text"], fg_color=COLORS["violet"], hover_color=COLORS["violet_hover"], border_color=COLORS["checkbox_border"], checkmark_color=COLORS["text"]).pack(anchor="w", padx=18, pady=(0, 16))
+        content_row = ctk.CTkFrame(main_container, fg_color="transparent")
+        content_row.pack(fill="both", expand=True, pady=(0, 10))
+
+        content_left = ctk.CTkFrame(content_row, fg_color="transparent")
+        content_left.pack(side="left", fill="both", expand=False, padx=(0, 6))
+
+        content_right = ctk.CTkFrame(content_row, fg_color="transparent")
+        content_right.pack(side="left", fill="both", expand=True, padx=(6, 0))
+
+        self.info_panel = InfoPanel()
+        self.info_panel.render(content_left, fill="x")
 
         self.dashboard = MetadataDashboard()
-        self.dashboard.render(main_container, fill="both", expand=True, pady=(0, 14))
+        self.dashboard.render(content_right, fill="both", expand=True)
 
         buttons_frame = ctk.CTkFrame(main_container, fg_color="transparent")
-        buttons_frame.pack(fill="x", pady=(8, 0))
+        buttons_frame.pack(fill="x", pady=(2, 0))
 
         self.btn_test = ActionButton("Testar Conexão", self._run_test_connection)
         self.btn_test.render(buttons_frame, side="left", fill="x", expand=True, padx=(0, 6))
@@ -166,7 +222,7 @@ class dialog:
         self.btn_modelupdate.render(buttons_frame, side="right", fill="x", expand=True, padx=(6, 0))
         self.btn_modelupdate.set_state("disabled")
 
-        self._refresh_metadata()
+        self._refresh_metadata(force_remote=False)
 
     @staticmethod
     def _env_bool(name: str, default: bool) -> bool:
@@ -177,7 +233,10 @@ class dialog:
 
     def _on_db_changed(self, selected_db: str):
         self.current_db_type = selected_db
-        self._refresh_metadata()
+        self.remote_tables = []
+        self.remote_views = []
+        self.remote_metadata_loaded = False
+        self._refresh_metadata(force_remote=False)
 
     def _set_model_update_state(self, state: str):
         if self.btn_modelupdate is not None:
@@ -210,24 +269,39 @@ class dialog:
 
     def _run_test_connection(self):
         self.btn_test.set_loading(True)
-        self.root.update_idletasks() # Força update visual
-        
-        try:
-            tables, views = self._get_remote_metadata()
-            self._refresh_metadata(tables=tables, views=views)
-            self._set_model_update_state("normal")
-            messagebox.showinfo("Sucesso", "Conexão estabelecida com sucesso e dados obtidos!")
+        self._set_model_update_state("disabled")
+        self.root.update_idletasks()
 
-        except Exception as e:
-            error_msg = str(e)
-            if "cryptography" in error_msg and "auth" in error_msg:
-                error_msg += "\n\n[DICA DO SQLMANAGER]: O MySQL 8+ exige um pacote extra de segurança para a senha.\nAbra o seu terminal e instale rodando:\npip install cryptography"
-                
-            messagebox.showerror("Erro de Conexão", f"Falha ao conectar no banco de dados:\n\n{error_msg}")
-            self._set_model_update_state("disabled")
-            
-        finally:
-            self.btn_test.set_loading(False)
+        def worker():
+            try:
+                tables, views = self._get_remote_metadata()
+                self.root.after(0, lambda: self._on_connection_success(tables, views))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_connection_error(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_connection_success(self, tables, views):
+        self.remote_tables = tables
+        self.remote_views = views
+        self.remote_metadata_loaded = True
+        self._refresh_metadata(tables=tables, views=views, force_remote=False)
+        self._set_model_update_state("normal")
+        self.btn_test.set_loading(False)
+        messagebox.showinfo("Sucesso", "Conexão estabelecida com sucesso e dados obtidos!")
+
+    def _on_connection_error(self, error):
+        error_msg = str(error)
+        if "cryptography" in error_msg and "auth" in error_msg:
+            error_msg += "\n\n[DICA DO SQLMANAGER]: O MySQL 8+ exige um pacote extra de segurança para a senha.\nAbra o seu terminal e instale rodando:\npip install cryptography"
+
+        self.remote_tables = []
+        self.remote_views = []
+        self.remote_metadata_loaded = False
+        self._refresh_metadata(force_remote=False)
+        self._set_model_update_state("disabled")
+        self.btn_test.set_loading(False)
+        messagebox.showerror("Erro de Conexão", f"Falha ao conectar no banco de dados:\n\n{error_msg}")
 
     def _apply_ui_credentials(self):
         """Captura os dados da tela e aplica ao CoreConfig apenas para a sessão atual (sem alterar o .env)."""
@@ -259,20 +333,22 @@ class dialog:
                 files.append(Path(file_name).stem)
         return sorted(files, key=str.lower)
 
-    def _refresh_metadata(self, tables=None, views=None):
-        if tables is None or views is None:
-            if self._can_query_remote_metadata():
-                try:
-                    tables, views = self._get_remote_metadata()
-                    self._set_model_update_state("normal")
-                except Exception:
-                    tables = tables if tables is not None else []
-                    views = views if views is not None else []
-                    self._set_model_update_state("disabled")
-            else:
-                tables = tables if tables is not None else []
-                views = views if views is not None else []
-                self._set_model_update_state("disabled")
+    def _refresh_metadata(self, tables=None, views=None, force_remote=False):
+        if force_remote and self._can_query_remote_metadata():
+            tables, views = self._get_remote_metadata()
+            self.remote_tables = tables
+            self.remote_views = views
+            self.remote_metadata_loaded = True
+
+        if tables is None:
+            tables = list(self.remote_tables) if self.remote_metadata_loaded else []
+        if views is None:
+            views = list(self.remote_views) if self.remote_metadata_loaded else []
+
+        if self.remote_metadata_loaded:
+            self._set_model_update_state("normal")
+        else:
+            self._set_model_update_state("disabled")
 
         self.dashboard.update_data(
             tables=tables,
