@@ -340,7 +340,7 @@ class TableController(ControllerBase, metaclass=TableControllerMeta):
         if match:
             field = match.group(1).upper()
             if field in ('*', '1'):
-                return 'RECID'
+                return None
             return field
         return None
 

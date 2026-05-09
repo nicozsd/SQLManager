@@ -32,9 +32,13 @@ class MetadataDashboard(ComponentMixin):
         
         self.metrics[name.lower()] = val_label
 
-    def update_data(self, tables: int, views: int, edts: int, enums: int):
+    def update_data(self, tables=None, views=None, edts=None, enums=None):
         if not self.widget: return
-        self.metrics["tabelas"].config(text=str(tables))
-        self.metrics["views"].config(text=str(views))
-        self.metrics["edts"].config(text=str(edts))
-        self.metrics["enums"].config(text=str(enums))
+        if tables is not None:
+            self.metrics["tabelas"].config(text=str(tables))
+        if views is not None:
+            self.metrics["views"].config(text=str(views))
+        if edts is not None:
+            self.metrics["edts"].config(text=str(edts))
+        if enums is not None:
+            self.metrics["enums"].config(text=str(enums))

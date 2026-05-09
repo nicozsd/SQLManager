@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 import sys
+from pathlib import Path
 
 # --- CORREÇÃO DE PATH ---
 # Garante que o Python encontre o módulo 'SQLManager' e a raiz do projeto
@@ -13,6 +14,13 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.getcwd(), ".env"))
+    load_dotenv(os.path.join(root_dir, ".env"))
+except ImportError:
+    pass
 
 from .UI.db_selector import DBSelector
 from .UI.info_panel import InfoPanel
@@ -32,7 +40,7 @@ class dialog:
         self.root.title(title)
         
         window_width = 450
-        window_height = 640
+        window_height = 720
         center_x = int((self.root.winfo_screenwidth() - window_width) / 2)
         center_y = int((self.root.winfo_screenheight() - window_height) / 2)
         self.root.geometry(f"{window_width}x{window_height}+{center_x}+{center_y}")
@@ -41,6 +49,9 @@ class dialog:
         self._apply_theme()
         
         self.current_db_type = None
+        self.require_recid_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_REQUIRE_RECID", True))
+        self.select_transaction_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_SELECT_USE_TRANSACTION", True))
+        self.cache_enabled_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_CACHE_ENABLED", True))
         
         # Inicializa a renderização da interface via herança/mixins
         self._build_ui()
@@ -84,7 +95,14 @@ class dialog:
 
         # 3. Dashboard de Metadados
         self.dashboard = MetadataDashboard()
-        self.dashboard.render(main_container, fill=tk.BOTH, expand=True, pady=(0, 20))
+        self.dashboard.render(main_container, fill=tk.BOTH, expand=True, pady=(0, 12))
+        self._refresh_local_metadata()
+
+        options_frame = ttk.LabelFrame(main_container, text=" Opcoes de Runtime ", padding=12)
+        options_frame.pack(fill=tk.X, pady=(0, 15))
+        ttk.Checkbutton(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var).pack(anchor=tk.W)
+        ttk.Checkbutton(options_frame, text="Usar transaction em SELECT", variable=self.select_transaction_var).pack(anchor=tk.W)
+        ttk.Checkbutton(options_frame, text="Ativar DataPulseCache para SELECT", variable=self.cache_enabled_var).pack(anchor=tk.W)
 
         # 4. Botões de Ação
         buttons_frame = ttk.Frame(main_container)
@@ -96,6 +114,13 @@ class dialog:
         self.btn_modelupdate = Button_modelupdate("Atualizar Modelos", self._run_model_update)
         self.btn_modelupdate.render(buttons_frame, side=tk.RIGHT, fill=tk.X, expand=True, padx=(5, 0))
         self.btn_modelupdate.set_state(tk.DISABLED) # Começa desabilitado
+
+    @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
 
     def _on_db_changed(self, selected_db: str):
         self.current_db_type = selected_db
@@ -125,8 +150,8 @@ class dialog:
             db.disconnect()
 
             # 4. Conta EDTs e Enums já existentes localmente
-            edts_count = self._count_local_files(os.path.join(root_dir, "src", "model", "EDTs"))
-            enums_count = self._count_local_files(os.path.join(root_dir, "src", "model", "enum"))
+            edts_count = self._count_local_files(self._model_folder("EDTs"))
+            enums_count = self._count_local_files(self._model_folder("enum"))
 
             # 5. Atualiza a Dashboard e libera a próxima etapa
             self.dashboard.update_data(tables=tables_count, views=views_count, edts=edts_count, enums=enums_count)
@@ -154,8 +179,23 @@ class dialog:
         os.environ["DB_DATABASE"] = self.info_panel.database_var.get()
         os.environ["DB_USER"] = self.info_panel.user_var.get()
         os.environ["DB_PASSWORD"] = self.info_panel.password_var.get()
+        os.environ["SQLMANAGER_REQUIRE_RECID"] = "true" if self.require_recid_var.get() else "false"
+        os.environ["SQLMANAGER_SELECT_USE_TRANSACTION"] = "true" if self.select_transaction_var.get() else "false"
+        os.environ["SQLMANAGER_CACHE_ENABLED"] = "true" if self.cache_enabled_var.get() else "false"
 
         CoreConfig.configure(load_from_env=True)
+
+    def _model_folder(self, child: str) -> str:
+        cwd_model = Path.cwd() / "src" / "model" / child
+        if cwd_model.exists():
+            return str(cwd_model)
+        return os.path.join(root_dir, "src", "model", child)
+
+    def _refresh_local_metadata(self):
+        self.dashboard.update_data(
+            edts=self._count_local_files(self._model_folder("EDTs")),
+            enums=self._count_local_files(self._model_folder("enum"))
+        )
 
     def _count_local_files(self, folder_path: str) -> int:
         """Conta quantos arquivos python existem em uma pasta (ignorando __init__)."""
@@ -179,6 +219,7 @@ class dialog:
             from SQLManager._model._model_update import ModelUpdater
             updater = ModelUpdater()
             updater.run()
+            self._refresh_local_metadata()
             
             messagebox.showinfo("Sucesso", "Modelos atualizados e gerados com sucesso!")
         except ImportError as ie:

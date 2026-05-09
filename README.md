@@ -7,7 +7,7 @@
 <!-- Badges -->
 <p>
   <img src="https://img.shields.io/badge/Python-3.8%2B-00e5ff?style=for-the-badge&logo=python&logoColor=white&labelColor=080c14"/>
-  <img src="https://img.shields.io/badge/Version-4.0.0-7c3aed?style=for-the-badge&labelColor=080c14"/>
+  <img src="https://img.shields.io/badge/Version-4.3.1-7c3aed?style=for-the-badge&labelColor=080c14"/>
   <img src="https://img.shields.io/badge/License-Private-f59e0b?style=for-the-badge&labelColor=080c14"/>
   <img src="https://img.shields.io/badge/Status-Production-10b981?style=for-the-badge&labelColor=080c14"/>
 </p>
@@ -149,7 +149,7 @@ pip install -r requirements.txt
 > **ATENÇÃO:** O `pip install` executa automaticamente o gerador de modelos durante a instalação. Certifique-se de que:
 > - Seu arquivo `.env` está configurado com as credenciais do banco de dados
 > - A pasta `src/` existe na raiz do seu projeto
-> - Todas as tabelas/views no banco possuem o campo `RECID` (tipo BIGINT)
+> - Por padrao, tabelas possuem `RECID` BIGINT. Para projetos somente leitura ou bancos legados, use `SQLMANAGER_REQUIRE_RECID=false`.
 
 #### Exemplo do arquivo `.env`:
 
@@ -159,7 +159,18 @@ DB_DATABASE=MeuBanco
 DB_USER=admin
 DB_PASSWORD=senha123
 DB_DRIVER=ODBC Driver 17 for SQL Server
+SQLMANAGER_REQUIRE_RECID=false
+SQLMANAGER_SELECT_USE_TRANSACTION=false
+SQLMANAGER_CACHE_ENABLED=true
+SQLMANAGER_CACHE_TTL=45
+SQLMANAGER_CACHE_MAX_ENTRIES=5000
 ```
+
+`SQLMANAGER_REQUIRE_RECID=false` permite gerar models de tabelas sem `RECID`. Essa opcao e indicada para uso focado em `SELECT`; `update()`, `delete()` e rotas por ID continuam dependendo de uma chave de negocio configurada ou do `RECID`.
+
+`SQLMANAGER_SELECT_USE_TRANSACTION=false` executa `SELECT` diretamente na conexao, sem abrir nivel transacional. Isso reduz overhead para leituras simples.
+
+`SQLMANAGER_CACHE_ENABLED`, `SQLMANAGER_CACHE_TTL` e `SQLMANAGER_CACHE_MAX_ENTRIES` controlam o DataPulseCache interno, usado para acelerar consultas repetidas sem precisar de Redis externo.
 
 #### Se não houver `.env`, use parâmetros diretos:
 
@@ -173,6 +184,8 @@ python -m SQLManager._model._model_update --server localhost --database MeuBanco
 - `--user`: Usuário do banco
 - `--password`: Senha do banco
 - `--driver`: Driver ODBC (padrão: 'ODBC Driver 17 for SQL Server')
+- `--require_recid`: `true` ou `false` para exigir `RECID` BIGINT no Model Update
+- `--select_use_transaction`: `true` ou `false` para SELECT abrir contexto transacional
 
 ---
 
@@ -208,7 +221,8 @@ Esse comando irá criar (ou atualizar) automaticamente as seguintes pastas e arq
 - src/model/views/   → Classes de views baseadas no banco
 
 > **Importante:**
-> - O Enum `DataType` e o EDT `Recid` são obrigatórios e sempre serão gerados automaticamente.
+> - O Enum `DataType` e o EDT `Recid` continuam sendo gerados automaticamente para compatibilidade.
+> - `SQLMANAGER_REQUIRE_RECID=false` desliga apenas a exigencia de `RECID` nas tabelas do banco durante o Model Update.
 > - O gerador sincroniza os campos das tabelas e views e views do banco com os arquivos Python.
 > - Não edite manualmente arquivos gerados, exceto para customizações documentadas.
 
@@ -1001,7 +1015,7 @@ python .venv/Lib/site-packages/SQLManager/_model/_model_update.py
 **Requisitos obrigatorios:**
 - Seu projeto DEVE ter uma pasta `src/` na raiz
 - O gerador criara automaticamente: `src/model/EDTs/`, `src/model/enum/`, `src/model/tables/`, `src/model/views/`
-- Todas as tabelas e views no banco DEVEM ter o campo `RECID` (tipo BIGINT)
+- Tabelas sem `RECID` podem ser geradas quando `SQLMANAGER_REQUIRE_RECID=false`; use esse modo principalmente para leitura e consultas.
 
 **IMPORTANTE - Nomenclatura:**
 A coerencia entre nomes de campos no banco e EDTs/Enums e ESTRITAMENTE IMPORTANTE:

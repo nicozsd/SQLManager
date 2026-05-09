@@ -28,6 +28,20 @@ Campos:
 - `ttl`: tempo de vida das consultas em segundos.
 - `max_entries`: limite total de entradas mantidas em memória.
 
+Tambem e possivel configurar pelo `.env`:
+
+```env
+SQLMANAGER_CACHE_ENABLED=true
+SQLMANAGER_CACHE_TTL=45
+SQLMANAGER_CACHE_MAX_ENTRIES=5000
+```
+
+Para consultas somente leitura com menor overhead, combine com:
+
+```env
+SQLMANAGER_SELECT_USE_TRANSACTION=false
+```
+
 ## WebSocket
 
 Quando `enable_websocket` está ativo, o AutoRouter cria o `WebSocketManager` se receber um app Flask compatível ou usa o objeto `socketio` fornecido. O manager agora aceita adaptadores com `emit`, `publish`, `broadcast`, `send_json` ou `send`, além de Flask-SocketIO e python-socketio.
@@ -128,4 +142,3 @@ stats = data_pulse_cache.stats()
 data_pulse_cache.invalidate_table("ProductsTable")
 data_pulse_cache.clear()
 ```
-

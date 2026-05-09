@@ -1,6 +1,7 @@
 from unittest import result
 
 from .. import DialectMixin
+from ....CoreConfig import CoreConfig
 
 class SQLServerMixin(DialectMixin, dialect="sqlserver"):
     def db_name(self):
@@ -41,9 +42,14 @@ class SQLServerMixin(DialectMixin, dialect="sqlserver"):
 
     def format_insert_query(self, table_name: str, fields: list) -> str:
         markers = ", ".join(["?"] * len(fields))
+        if not CoreConfig.require_recid():
+            return f"INSERT INTO {table_name} ({', '.join(fields)}) VALUES ({markers})"
         return f"INSERT INTO {table_name} ({', '.join(fields)}) OUTPUT INSERTED.RECID VALUES ({markers})"
 
     def execute_insert_and_get_id(self, trs, query: str, values: tuple) -> int:
+        if not CoreConfig.require_recid():
+            trs.executeCommand(query, values)
+            return None
         result = trs.doQuery(query, values)
         return int(result[0][0]) if result and result[0][0] else None
 

@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING
 
 from .. import *
+from SQLManager import CoreConfig
 
 class Table_Manager:
     '''Gerenciamento de Tables'''
@@ -110,18 +111,19 @@ class Table_Manager:
         if not columns:
             return {'table': table_name, 'reason': 'Tabela sem colunas'}
         
-        recid_column = None
-        for col in columns:
-            if col[0].upper() == 'RECID':
-                recid_column = col
-                break
-        
-        if not recid_column:
-            return {'table': table_name, 'reason': 'Campo RECID obrigatório não encontrado'}
-                
-        recid_type = recid_column[1].lower()
-        if recid_type != 'bigint':
-            return {'table': table_name, 'reason': f'Campo RECID deve ser BIGINT (encontrado: {recid_type.upper()})'}
+        if CoreConfig.require_recid():
+            recid_column = None
+            for col in columns:
+                if col[0].upper() == 'RECID':
+                    recid_column = col
+                    break
+            
+            if not recid_column:
+                return {'table': table_name, 'reason': 'Campo RECID obrigatório não encontrado'}
+                    
+            recid_type = recid_column[1].lower()
+            if recid_type != 'bigint':
+                return {'table': table_name, 'reason': f'Campo RECID deve ser BIGINT (encontrado: {recid_type.upper()})'}
         
         table_file = _model.tables_path / f"{table_name}.py"
         
