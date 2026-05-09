@@ -35,37 +35,46 @@ class Table_Manager:
             for table in _model.available_tables.keys():
                 print(f" - {table}")
 
-    def _update_tables(_model):
+    def _update_tables(_model, selected_tables=None):
         '''Atualiza Tables baseadas no banco de dados'''        
         query = _model.get_model_tables_query()
         
         tables = _model.db.doQuery(query)
         db_tables = [row[0] for row in tables]
+        selected_tables = {name.lower() for name in selected_tables} if selected_tables is not None else None
+
+        if selected_tables is None:
+            tables_to_process = db_tables
+        else:
+            tables_to_process = [table_name for table_name in db_tables if table_name.lower() in selected_tables]
         
         print(f"Encontradas {SystemController().custom_text(len(db_tables), 'red', is_bold=True)} tabelas no banco de dados")                        
+        if selected_tables is not None:
+            print(f"Processando {SystemController().custom_text(len(tables_to_process), 'cyan', is_bold=True)} tabelas selecionadas")
         
         skipped_tables = []
-        for table_name in db_tables:
+        for table_name in tables_to_process:
             error_info = Table_Manager._update_single_table(_model, table_name)
             if error_info:
                 skipped_tables.append(error_info)
-                
-        db_tables_lower = set(t.lower() for t in db_tables)
-                
-        tables_to_remove = [
-            (table_name, file_path)
-            for table_name, file_path in _model.available_tables.items()
-            if table_name.lower() not in db_tables_lower
-        ]
 
-        for table_name, file_path in tables_to_remove:
-            print(f"\nTabela '{SystemController().custom_text(table_name, 'red')}' removida da aplicação pois não existe no banco de dados!")
-            file_path.unlink()
-            if table_name in _model.available_tables:
-                del _model.available_tables[table_name]
-            file_stem = file_path.stem
-            if file_stem in _model.table_file_to_class:
-                del _model.table_file_to_class[file_stem]
+        if selected_tables is None:
+            db_tables_lower = set(t.lower() for t in db_tables)
+
+            tables_to_remove = [
+                (table_name, file_path)
+                for table_name, file_path in _model.available_tables.items()
+                if table_name.lower() not in db_tables_lower
+            ]
+
+            for table_name, file_path in tables_to_remove:
+                print(f"\nTabela '{SystemController().custom_text(table_name, 'red')}' removida da aplicação pois não existe no banco de dados!")
+                file_path.unlink()
+                if table_name in _model.available_tables:
+                    del _model.available_tables[table_name]
+                file_stem = file_path.stem
+                if file_stem in _model.table_file_to_class:
+                    del _model.table_file_to_class[file_stem]
         
         if skipped_tables:
             print(f"\n{SystemController().custom_text('TABELAS NÃO PROCESSADAS', 'yellow', is_bold=True)}")

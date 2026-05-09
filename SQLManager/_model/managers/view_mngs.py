@@ -34,37 +34,46 @@ class View_Manager:
             for view in _model.available_views.keys():
                 print(f" - {view}")
 
-    def _update_views(_model):
+    def _update_views(_model, selected_views=None):
         '''Atualiza Views baseadas no banco de dados'''        
         query = _model.get_model_views_query()
         
         views    = _model.db.doQuery(query)
         db_views = [row[0] for row in views]
+        selected_views = {name.lower() for name in selected_views} if selected_views is not None else None
+
+        if selected_views is None:
+            views_to_process = db_views
+        else:
+            views_to_process = [view_name for view_name in db_views if view_name.lower() in selected_views]
         
         print(f"Encontradas {SystemController().custom_text(len(db_views), 'red', is_bold=True)} Views no banco de dados")                        
+        if selected_views is not None:
+            print(f"Processando {SystemController().custom_text(len(views_to_process), 'cyan', is_bold=True)} views selecionadas")
         
         skipped_views = []
-        for view_name in db_views:
+        for view_name in views_to_process:
             error_info = View_Manager._update_single_view(_model, view_name)
             if error_info:
                 skipped_views.append(error_info)
-                
-        db_views_lower = set(v.lower() for v in db_views)
-                
-        views_to_remove = [
-            (view_name, file_path)
-            for view_name, file_path in _model.available_views.items()
-            if view_name.lower() not in db_views_lower
-        ]
 
-        for view_name, file_path in views_to_remove:
-            print(f"\nView '{SystemController().custom_text(view_name, 'red')}' removida da aplicação pois não existe no banco de dados!")
-            file_path.unlink()
-            if view_name in _model.available_views:
-                del _model.available_views[view_name]
-            file_stem = file_path.stem
-            if file_stem in _model.view_file_to_class:
-                del _model.view_file_to_class[file_stem]
+        if selected_views is None:
+            db_views_lower = set(v.lower() for v in db_views)
+
+            views_to_remove = [
+                (view_name, file_path)
+                for view_name, file_path in _model.available_views.items()
+                if view_name.lower() not in db_views_lower
+            ]
+
+            for view_name, file_path in views_to_remove:
+                print(f"\nView '{SystemController().custom_text(view_name, 'red')}' removida da aplicação pois não existe no banco de dados!")
+                file_path.unlink()
+                if view_name in _model.available_views:
+                    del _model.available_views[view_name]
+                file_stem = file_path.stem
+                if file_stem in _model.view_file_to_class:
+                    del _model.view_file_to_class[file_stem]
         
         if skipped_views:
             print(f"\n{SystemController().custom_text('VIEWS NÃO PROCESSADAS', 'yellow', is_bold=True)}")

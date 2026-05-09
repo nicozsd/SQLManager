@@ -32,6 +32,12 @@ class ModelUpdater(ModelUpdaterBase):
     '''Atualização automática de modelos'''
 
     @staticmethod
+    def _normalize_selection(selected_names):
+        if selected_names is None:
+            return None
+        return {str(name).lower() for name in selected_names}
+
+    @staticmethod
     def _get_values(obj):
         '''Retorna valores de dict ou lista de forma compatível'''
         if isinstance(obj, dict):
@@ -162,11 +168,14 @@ class ModelUpdater(ModelUpdaterBase):
         if hasattr(self, 'db'):
             self.db.disconnect()    
     
-    def run(self):
+    def run(self, selected_tables=None, selected_views=None):
         '''Executa atualização completa'''
         print("="*40)
         print("MODEL UPDATE")
         print("="*40)
+
+        selected_tables = self._normalize_selection(selected_tables)
+        selected_views = self._normalize_selection(selected_views)
 
         existing_tables = list(self.tables_path.glob("*.py"))
         existing_tables = [f for f in existing_tables if not f.name.startswith("_")]
@@ -248,7 +257,7 @@ class ModelUpdater(ModelUpdaterBase):
             Table_Manager._scan_existing_tables(self, _ShowTables=True)
 
             utils.stepInfo("03.2", "Atualizando Tables")
-            Table_Manager._update_tables(self)
+            Table_Manager._update_tables(self, selected_tables=selected_tables)
 
             utils.stepInfo("03.3", "Atualizando model de Tables")
             Table_Manager._scan_existing_tables(self, _ShowTables=True)
@@ -258,7 +267,7 @@ class ModelUpdater(ModelUpdaterBase):
             View_Manager._scan_existing_views(self, _ShowViews=True)
 
             utils.stepInfo("04.2", "Atualizando Views")
-            View_Manager._update_views(self)
+            View_Manager._update_views(self, selected_views=selected_views)
 
             utils.stepInfo("04.3", "Atualizando model de Views")
             View_Manager._update_views_init(self)

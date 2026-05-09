@@ -39,19 +39,17 @@ class dialog:
         self.root = tk.Tk()
         self.root.title(title)
         
-        window_width = 450
-        window_height = 720
+        window_width = 860
+        window_height = 840
         center_x = int((self.root.winfo_screenwidth() - window_width) / 2)
         center_y = int((self.root.winfo_screenheight() - window_height) / 2)
         self.root.geometry(f"{window_width}x{window_height}+{center_x}+{center_y}")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
         
         self._apply_theme()
         
         self.current_db_type = None
         self.require_recid_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_REQUIRE_RECID", True))
-        self.select_transaction_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_SELECT_USE_TRANSACTION", True))
-        self.cache_enabled_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_CACHE_ENABLED", True))
         
         # Inicializa a renderização da interface via herança/mixins
         self._build_ui()
@@ -96,13 +94,11 @@ class dialog:
         # 3. Dashboard de Metadados
         self.dashboard = MetadataDashboard()
         self.dashboard.render(main_container, fill=tk.BOTH, expand=True, pady=(0, 12))
-        self._refresh_local_metadata()
+        self._refresh_metadata()
 
         options_frame = ttk.LabelFrame(main_container, text=" Opcoes de Runtime ", padding=12)
         options_frame.pack(fill=tk.X, pady=(0, 15))
         ttk.Checkbutton(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var).pack(anchor=tk.W)
-        ttk.Checkbutton(options_frame, text="Usar transaction em SELECT", variable=self.select_transaction_var).pack(anchor=tk.W)
-        ttk.Checkbutton(options_frame, text="Ativar DataPulseCache para SELECT", variable=self.cache_enabled_var).pack(anchor=tk.W)
 
         # 4. Botões de Ação
         buttons_frame = ttk.Frame(main_container)
@@ -124,37 +120,40 @@ class dialog:
 
     def _on_db_changed(self, selected_db: str):
         self.current_db_type = selected_db
+        self._refresh_metadata()
+
+    def _can_query_remote_metadata(self) -> bool:
+        return all([
+            self.info_panel.server_var.get().strip(),
+            self.info_panel.database_var.get().strip(),
+            self.info_panel.user_var.get().strip(),
+            self.info_panel.password_var.get().strip(),
+        ])
+
+    def _get_remote_metadata(self):
+        from SQLManager.connection import database_connection
+        from SQLManager._model._model_update import ModelUpdaterBase
+
+        self._apply_ui_credentials()
+
+        dialect = ModelUpdaterBase()
+        db = database_connection()
+        db.connect()
+
+        try:
+            tables = db.doQuery(dialect.get_model_tables_query())
+            views = db.doQuery(dialect.get_model_views_query())
+            return [row[0] for row in tables], [row[0] for row in views]
+        finally:
+            db.disconnect()
 
     def _run_test_connection(self):
         self.btn_test.set_loading(True)
         self.root.update_idletasks() # Força update visual
         
         try:
-            from SQLManager import CoreConfig
-            from SQLManager.connection import database_connection
-
-            # 1. Aplica as credenciais da UI apenas para a sessão atual
-            self._apply_ui_credentials()
-
-            # 2. Conexão Real
-            db = database_connection()
-            db.connect()
-
-            # 3. Conta Tabelas e Views reais no banco (Padrão ANSI suportado por SQLServer e MySQL)
-            q_tables = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
-            q_views = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS"
-            
-            tables_count = db.doQuery(q_tables)[0][0]
-            views_count = db.doQuery(q_views)[0][0]
-
-            db.disconnect()
-
-            # 4. Conta EDTs e Enums já existentes localmente
-            edts_count = self._count_local_files(self._model_folder("EDTs"))
-            enums_count = self._count_local_files(self._model_folder("enum"))
-
-            # 5. Atualiza a Dashboard e libera a próxima etapa
-            self.dashboard.update_data(tables=tables_count, views=views_count, edts=edts_count, enums=enums_count)
+            tables, views = self._get_remote_metadata()
+            self._refresh_metadata(tables=tables, views=views)
             self.btn_modelupdate.set_state(tk.NORMAL)
             messagebox.showinfo("Sucesso", "Conexão estabelecida com sucesso e dados obtidos!")
 
@@ -180,8 +179,6 @@ class dialog:
         os.environ["DB_USER"] = self.info_panel.user_var.get()
         os.environ["DB_PASSWORD"] = self.info_panel.password_var.get()
         os.environ["SQLMANAGER_REQUIRE_RECID"] = "true" if self.require_recid_var.get() else "false"
-        os.environ["SQLMANAGER_SELECT_USE_TRANSACTION"] = "true" if self.select_transaction_var.get() else "false"
-        os.environ["SQLMANAGER_CACHE_ENABLED"] = "true" if self.cache_enabled_var.get() else "false"
 
         CoreConfig.configure(load_from_env=True)
 
@@ -191,20 +188,37 @@ class dialog:
             return str(cwd_model)
         return os.path.join(root_dir, "src", "model", child)
 
-    def _refresh_local_metadata(self):
-        self.dashboard.update_data(
-            edts=self._count_local_files(self._model_folder("EDTs")),
-            enums=self._count_local_files(self._model_folder("enum"))
-        )
+    def _list_local_files(self, folder_path: str):
+        if not os.path.exists(folder_path):
+            return []
 
-    def _count_local_files(self, folder_path: str) -> int:
-        """Conta quantos arquivos python existem em uma pasta (ignorando __init__)."""
-        count = 0
-        if os.path.exists(folder_path):
-            for file in os.listdir(folder_path):
-                if file.endswith(".py") and not file.startswith("__"):
-                    count += 1
-        return count
+        files = []
+        for file_name in os.listdir(folder_path):
+            if file_name.endswith(".py") and not file_name.startswith("__"):
+                files.append(Path(file_name).stem)
+        return sorted(files, key=str.lower)
+
+    def _refresh_metadata(self, tables=None, views=None):
+        if tables is None or views is None:
+            if self._can_query_remote_metadata():
+                try:
+                    tables, views = self._get_remote_metadata()
+                    self.btn_modelupdate.set_state(tk.NORMAL)
+                except Exception:
+                    tables = tables if tables is not None else []
+                    views = views if views is not None else []
+                    self.btn_modelupdate.set_state(tk.DISABLED)
+            else:
+                tables = tables if tables is not None else []
+                views = views if views is not None else []
+                self.btn_modelupdate.set_state(tk.DISABLED)
+
+        self.dashboard.update_data(
+            tables=tables,
+            views=views,
+            edts=self._list_local_files(self._model_folder("EDTs")),
+            enums=self._list_local_files(self._model_folder("enum"))
+        )
 
     def _run_model_update(self):
         """Inicia o processo real de atualização de modelos."""
@@ -218,8 +232,11 @@ class dialog:
             # Importa e executa o ModelUpdater real (Issue #6)
             from SQLManager._model._model_update import ModelUpdater
             updater = ModelUpdater()
-            updater.run()
-            self._refresh_local_metadata()
+            updater.run(
+                selected_tables=self.dashboard.get_selected_tables(),
+                selected_views=self.dashboard.get_selected_views(),
+            )
+            self._refresh_metadata()
             
             messagebox.showinfo("Sucesso", "Modelos atualizados e gerados com sucesso!")
         except ImportError as ie:
