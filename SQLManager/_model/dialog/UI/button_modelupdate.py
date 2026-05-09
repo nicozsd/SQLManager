@@ -1,7 +1,7 @@
-import tkinter as tk
-from tkinter import ttk
 from typing import Callable
+import customtkinter as ctk
 from .mixins import ComponentMixin
+from .theme import COLORS, FONTS
 
 class Button_modelupdate(ComponentMixin):
     def __init__(self, text: str, command: Callable):
@@ -9,17 +9,27 @@ class Button_modelupdate(ComponentMixin):
         self.text = text
         self.command = command
 
-    def _build(self, parent: tk.Widget) -> tk.Widget:
-        btn = ttk.Button(parent, text=self.text, command=self.command, cursor="hand2")
+    def _build(self, parent):
+        btn = ctk.CTkButton(
+            parent,
+            text=self.text,
+            command=self.command,
+            font=FONTS["button"],
+            fg_color=COLORS["violet"],
+            hover_color=COLORS["violet_hover"],
+            text_color=COLORS["text"],
+            corner_radius=14,
+            height=42,
+        )
         return btn
         
     def set_state(self, state: str):
         if self.widget:
-            self.widget.config(state=state)
+            self.widget.configure(state=state)
             
     def set_loading(self, is_loading: bool, text: str = "Processando..."):
         if not self.widget: return
         if is_loading:
-            self.widget.config(text=text, state=tk.DISABLED)
+            self.widget.configure(text=text, state="disabled")
         else:
-            self.widget.config(text=self.text, state=tk.NORMAL)
+            self.widget.configure(text=self.text, state="normal")

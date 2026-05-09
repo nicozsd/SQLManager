@@ -1,6 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+import customtkinter as ctk
 from .mixins import ComponentMixin
+from .theme import COLORS, FONTS
 
 
 class _MetadataListSection:
@@ -9,56 +10,43 @@ class _MetadataListSection:
         self.selectable = selectable
         self.frame = None
         self.count_label = None
-        self.canvas = None
-        self.canvas_window = None
         self.body = None
         self.variables = {}
         self.items = []
 
-    def build(self, parent: tk.Widget, row: int, col: int):
-        self.frame = ttk.LabelFrame(parent, text=f" {self.title} ", padding=10)
-        self.frame.grid(row=row, column=col, sticky=tk.NSEW, padx=6, pady=6)
+    def build(self, parent, row: int, col: int):
+        self.frame = ctk.CTkFrame(parent, fg_color=COLORS["surface"], corner_radius=18, border_width=1, border_color=COLORS["border"])
+        self.frame.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
         self.frame.columnconfigure(0, weight=1)
         self.frame.rowconfigure(1, weight=1)
 
-        header = ttk.Frame(self.frame)
-        header.grid(row=0, column=0, sticky=tk.EW, pady=(0, 8))
+        header = ctk.CTkFrame(self.frame, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
         header.columnconfigure(0, weight=1)
 
-        self.count_label = ttk.Label(header, text="0", font=("Segoe UI", 12, "bold"), foreground="#0078D7")
-        self.count_label.grid(row=0, column=0, sticky=tk.W)
+        title_col = ctk.CTkFrame(header, fg_color="transparent")
+        title_col.grid(row=0, column=0, sticky="w")
+
+        ctk.CTkLabel(title_col, text=self.title, font=FONTS["section"], text_color=COLORS["text"]).pack(anchor="w")
+        self.count_label = ctk.CTkLabel(title_col, text="0 itens", font=FONTS["body_small"], text_color=COLORS["cyan"])
+        self.count_label.pack(anchor="w")
 
         if self.selectable:
-            actions = ttk.Frame(header)
-            actions.grid(row=0, column=1, sticky=tk.E)
-            ttk.Button(actions, text="Marcar tudo", command=self.select_all, width=12).pack(side=tk.LEFT, padx=(0, 4))
-            ttk.Button(actions, text="Desmarcar", command=self.clear_selection, width=12).pack(side=tk.LEFT)
+            actions = ctk.CTkFrame(header, fg_color="transparent")
+            actions.grid(row=0, column=1, sticky="e")
+            ctk.CTkButton(actions, text="Marcar tudo", command=self.select_all, width=96, height=30, font=FONTS["body_small"], fg_color=COLORS["panel_alt"], hover_color=COLORS["surface_hover"], border_width=1, border_color=COLORS["border"]).pack(side="left", padx=(0, 6))
+            ctk.CTkButton(actions, text="Desmarcar", command=self.clear_selection, width=96, height=30, font=FONTS["body_small"], fg_color=COLORS["panel_alt"], hover_color=COLORS["surface_hover"], border_width=1, border_color=COLORS["border"]).pack(side="left")
 
-        list_container = ttk.Frame(self.frame)
-        list_container.grid(row=1, column=0, sticky=tk.NSEW)
-        list_container.columnconfigure(0, weight=1)
-        list_container.rowconfigure(0, weight=1)
-
-        self.canvas = tk.Canvas(list_container, height=180, highlightthickness=0, bg="#FFFFFF")
-        scrollbar = ttk.Scrollbar(list_container, orient=tk.VERTICAL, command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=scrollbar.set)
-
-        self.canvas.grid(row=0, column=0, sticky=tk.NSEW)
-        scrollbar.grid(row=0, column=1, sticky=tk.NS)
-
-        self.body = ttk.Frame(self.canvas)
-        self.canvas_window = self.canvas.create_window((0, 0), window=self.body, anchor=tk.NW)
-        self.body.bind("<Configure>", self._sync_scroll_region)
-        self.canvas.bind("<Configure>", self._resize_body)
-
-    def _sync_scroll_region(self, _event=None):
-        if self.canvas is not None:
-            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-    def _resize_body(self, event):
-        if self.canvas is None or self.canvas_window is None:
-            return
-        self.canvas.itemconfigure(self.canvas_window, width=event.width)
+        self.body = ctk.CTkScrollableFrame(
+            self.frame,
+            fg_color=COLORS["input"],
+            corner_radius=14,
+            border_width=1,
+            border_color=COLORS["input_border"],
+            height=215,
+            label_text="",
+        )
+        self.body.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
 
     def set_items(self, items, selected_items=None):
         if self.body is None:
@@ -72,11 +60,11 @@ class _MetadataListSection:
         normalized_items = [str(item) for item in (items or [])]
         self.items = normalized_items
         self.variables = {}
-        self.count_label.config(text=str(len(normalized_items)))
+        suffix = "item" if len(normalized_items) == 1 else "itens"
+        self.count_label.configure(text=f"{len(normalized_items)} {suffix}")
 
         if not normalized_items:
-            ttk.Label(self.body, text="Sem dados", foreground="#777777").pack(anchor=tk.W, padx=4, pady=4)
-            self._sync_scroll_region()
+            ctk.CTkLabel(self.body, text="Sem dados", font=FONTS["body_small"], text_color=COLORS["muted"]).pack(anchor="w", padx=8, pady=8)
             return
 
         if self.selectable:
@@ -89,13 +77,23 @@ class _MetadataListSection:
 
             for item in normalized_items:
                 variable = tk.BooleanVar(value=item in selected_set)
-                ttk.Checkbutton(self.body, text=item, variable=variable).pack(anchor=tk.W, fill=tk.X, padx=4, pady=1)
+                ctk.CTkCheckBox(
+                    self.body,
+                    text=item,
+                    variable=variable,
+                    onvalue=True,
+                    offvalue=False,
+                    font=FONTS["body"],
+                    text_color=COLORS["text"],
+                    fg_color=COLORS["violet"],
+                    hover_color=COLORS["violet_hover"],
+                    border_color=COLORS["checkbox_border"],
+                    checkmark_color=COLORS["text"],
+                ).pack(anchor="w", fill="x", padx=8, pady=3)
                 self.variables[item] = variable
         else:
             for item in normalized_items:
-                ttk.Label(self.body, text=item).pack(anchor=tk.W, fill=tk.X, padx=4, pady=1)
-
-        self._sync_scroll_region()
+                ctk.CTkLabel(self.body, text=item, font=FONTS["body"], text_color=COLORS["text"], anchor="w").pack(anchor="w", fill="x", padx=8, pady=3)
 
     def get_selected_items(self):
         if not self.selectable:
@@ -116,8 +114,8 @@ class MetadataDashboard(ComponentMixin):
         super().__init__()
         self.sections = {}
 
-    def _build(self, parent: tk.Widget) -> tk.Widget:
-        frame = ttk.LabelFrame(parent, text=" Metadados do Banco ", padding=12)
+    def _build(self, parent):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
 
         for col in range(2):
             frame.columnconfigure(col, weight=1)

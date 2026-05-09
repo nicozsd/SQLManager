@@ -1,8 +1,14 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 import os
 import sys
 from pathlib import Path
+import customtkinter as ctk
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 # --- CORREÇÃO DE PATH ---
 # Garante que o Python encontre o módulo 'SQLManager' e a raiz do projeto
@@ -27,6 +33,7 @@ from .UI.info_panel import InfoPanel
 from .UI.action_button import ActionButton
 from .UI.dashboard import MetadataDashboard
 from .UI.button_modelupdate import Button_modelupdate
+from .UI.theme import APP_DESCRIPTION, APP_SUBTITLE, APP_TAGS, APP_TITLE, COLORS, FONTS
 
 class dialog:
     """
@@ -36,10 +43,13 @@ class dialog:
         d.start()
     """
     def __init__(self, title: str):
-        self.root = tk.Tk()
-        self.root.title(title)
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+
+        self.root = ctk.CTk()
+        self.root.title(APP_TITLE)
         
-        window_width = 860
+        window_width = 980
         window_height = 840
         center_x = int((self.root.winfo_screenwidth() - window_width) / 2)
         center_y = int((self.root.winfo_screenheight() - window_height) / 2)
@@ -52,35 +62,80 @@ class dialog:
         self.require_recid_var = tk.BooleanVar(value=self._env_bool("SQLMANAGER_REQUIRE_RECID", True))
         self.btn_test = None
         self.btn_modelupdate = None
+        self.brand_image = None
+        self.window_icon = None
         
         # Inicializa a renderização da interface via herança/mixins
         self._build_ui()
 
     def _apply_theme(self):
-        """Configura um estilo minimalista e moderno"""
-        style = ttk.Style(self.root)
-        if 'clam' in style.theme_names():
-            style.theme_use('clam')
-        self.root.configure(bg="#F3F3F3")
-        style.configure("TFrame", background="#F3F3F3")
-        style.configure("TLabelframe", background="#F3F3F3", font=("Segoe UI", 10, "bold"))
-        style.configure("TLabelframe.Label", background="#F3F3F3")
-        style.configure("TLabel", background="#F3F3F3")
-        style.configure("TButton", font=("Segoe UI", 10, "bold"), background="#0078D7", foreground="white", padding=6)
-        style.map("TButton", background=[("active", "#005A9E")])
+        self.root.configure(fg_color=COLORS["bg"])
+        self._apply_window_icon()
+
+    def _asset_path(self, file_name: str) -> Path:
+        local_asset = Path(__file__).resolve().parent / "assets" / file_name
+        if local_asset.exists():
+            return local_asset
+        return Path(root_dir) / "assets" / file_name
+
+    def _apply_window_icon(self):
+        icon_path = self._asset_path("app_icon.png")
+        if icon_path.exists():
+            try:
+                self.window_icon = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(False, self.window_icon)
+            except Exception:
+                self.window_icon = None
+
+    def _load_brand_image(self):
+        if Image is None:
+            return None
+        icon_path = self._asset_path("app_icon.png")
+        if not icon_path.exists():
+            return None
+        try:
+            return ctk.CTkImage(light_image=Image.open(icon_path), dark_image=Image.open(icon_path), size=(88, 88))
+        except Exception:
+            return None
+
+    def _build_header(self, parent):
+        header = ctk.CTkFrame(parent, fg_color=COLORS["panel"], corner_radius=24, border_width=1, border_color=COLORS["border"])
+        header.pack(fill="x", pady=(0, 18))
+        header.grid_columnconfigure(1, weight=1)
+
+        self.brand_image = self._load_brand_image()
+        icon_holder = ctk.CTkFrame(header, width=110, height=110, fg_color=COLORS["panel_alt"], corner_radius=22, border_width=1, border_color=COLORS["border"])
+        icon_holder.grid(row=0, column=0, rowspan=2, sticky="nsw", padx=18, pady=18)
+        icon_holder.grid_propagate(False)
+
+        if self.brand_image is not None:
+            ctk.CTkLabel(icon_holder, text="", image=self.brand_image).pack(expand=True)
+        else:
+            ctk.CTkLabel(icon_holder, text="SQL", font=("Segoe UI Black", 28), text_color=COLORS["cyan"]).pack(expand=True)
+
+        text_col = ctk.CTkFrame(header, fg_color="transparent")
+        text_col.grid(row=0, column=1, sticky="nsew", padx=(0, 18), pady=(18, 8))
+
+        ctk.CTkLabel(text_col, text=APP_TITLE, font=FONTS["title"], text_color=COLORS["text"]).pack(anchor="w")
+        ctk.CTkLabel(text_col, text=APP_SUBTITLE, font=FONTS["subtitle"], text_color=COLORS["cyan"] ).pack(anchor="w", pady=(4, 0))
+        ctk.CTkLabel(text_col, text=APP_DESCRIPTION, font=FONTS["body"], text_color=COLORS["muted"], justify="left", wraplength=620).pack(anchor="w", pady=(10, 0))
+
+        tag_row = ctk.CTkFrame(header, fg_color="transparent")
+        tag_row.grid(row=1, column=1, sticky="w", padx=(0, 18), pady=(0, 18))
+
+        tag_colors = [COLORS["violet"], COLORS["cyan"], COLORS["success"], COLORS["pink"]]
+        for tag, color in zip(APP_TAGS, tag_colors):
+            ctk.CTkLabel(tag_row, text=tag, font=FONTS["tag"], text_color=COLORS["text"], fg_color=color, corner_radius=999, padx=12, pady=4).pack(side="left", padx=(0, 8))
 
     def _build_ui(self):
-        main_container = ttk.Frame(self.root, padding=20)
-        main_container.pack(fill=tk.BOTH, expand=True)
+        main_container = ctk.CTkFrame(self.root, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=24, pady=24)
 
-        # Cabeçalho
-        ttk.Label(main_container, text="Model Update", font=("Segoe UI", 16, "bold"), background="#F3F3F3").pack(pady=(0, 20))
+        self._build_header(main_container)
 
-        # 1. Seletor de Banco (Delegando renderização ao componente)
         self.db_selector = DBSelector(["SQL Server (SSMS)", "MySQL"], self._on_db_changed)
-        self.db_selector.render(main_container, fill=tk.X, pady=(0, 15))
+        self.db_selector.render(main_container, fill="x", pady=(0, 14))
 
-        # Preenche com o valor atual salvo no .env (se houver)
         db_env = os.getenv("DB_TYPE", "SQLSERVER").upper()
         if db_env == "MYSQL":
             self.db_selector.selected_value.set("MySQL")
@@ -89,28 +144,27 @@ class dialog:
             self.db_selector.selected_value.set("SQL Server (SSMS)")
             self.current_db_type = "SQL Server (SSMS)"
 
-        # 2. Painel de Informações Seguras
         self.info_panel = InfoPanel()
-        self.info_panel.render(main_container, fill=tk.X, pady=(0, 15))
+        self.info_panel.render(main_container, fill="x", pady=(0, 14))
 
-        # 4. Botões de Ação
-        buttons_frame = ttk.Frame(main_container)
-        buttons_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(10, 0))
+        options_frame = ctk.CTkFrame(main_container, fg_color=COLORS["surface"], corner_radius=18, border_width=1, border_color=COLORS["border"])
+        options_frame.pack(fill="x", pady=(0, 14))
+        ctk.CTkLabel(options_frame, text="Opcoes de Runtime", font=FONTS["section"], text_color=COLORS["text"]).pack(anchor="w", padx=18, pady=(16, 4))
+        ctk.CTkLabel(options_frame, text="Controle aplicado apenas durante a geracao dos models.", font=FONTS["body_small"], text_color=COLORS["muted"]).pack(anchor="w", padx=18, pady=(0, 10))
+        ctk.CTkCheckBox(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var, onvalue=True, offvalue=False, font=FONTS["body"], text_color=COLORS["text"], fg_color=COLORS["violet"], hover_color=COLORS["violet_hover"], border_color=COLORS["checkbox_border"], checkmark_color=COLORS["text"]).pack(anchor="w", padx=18, pady=(0, 16))
+
+        self.dashboard = MetadataDashboard()
+        self.dashboard.render(main_container, fill="both", expand=True, pady=(0, 14))
+
+        buttons_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        buttons_frame.pack(fill="x", pady=(8, 0))
 
         self.btn_test = ActionButton("Testar Conexão", self._run_test_connection)
-        self.btn_test.render(buttons_frame, side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.btn_test.render(buttons_frame, side="left", fill="x", expand=True, padx=(0, 6))
 
         self.btn_modelupdate = Button_modelupdate("Atualizar Modelos", self._run_model_update)
-        self.btn_modelupdate.render(buttons_frame, side=tk.RIGHT, fill=tk.X, expand=True, padx=(5, 0))
-        self.btn_modelupdate.set_state(tk.DISABLED) # Começa desabilitado
-
-        # 3. Dashboard de Metadados
-        self.dashboard = MetadataDashboard()
-        self.dashboard.render(main_container, fill=tk.BOTH, expand=True, pady=(0, 12))
-
-        options_frame = ttk.LabelFrame(main_container, text=" Opcoes de Runtime ", padding=12)
-        options_frame.pack(fill=tk.X, pady=(0, 15))
-        ttk.Checkbutton(options_frame, text="Exigir RECID BIGINT no Model Update", variable=self.require_recid_var).pack(anchor=tk.W)
+        self.btn_modelupdate.render(buttons_frame, side="right", fill="x", expand=True, padx=(6, 0))
+        self.btn_modelupdate.set_state("disabled")
 
         self._refresh_metadata()
 
@@ -161,7 +215,7 @@ class dialog:
         try:
             tables, views = self._get_remote_metadata()
             self._refresh_metadata(tables=tables, views=views)
-            self._set_model_update_state(tk.NORMAL)
+            self._set_model_update_state("normal")
             messagebox.showinfo("Sucesso", "Conexão estabelecida com sucesso e dados obtidos!")
 
         except Exception as e:
@@ -170,7 +224,7 @@ class dialog:
                 error_msg += "\n\n[DICA DO SQLMANAGER]: O MySQL 8+ exige um pacote extra de segurança para a senha.\nAbra o seu terminal e instale rodando:\npip install cryptography"
                 
             messagebox.showerror("Erro de Conexão", f"Falha ao conectar no banco de dados:\n\n{error_msg}")
-            self._set_model_update_state(tk.DISABLED)
+            self._set_model_update_state("disabled")
             
         finally:
             self.btn_test.set_loading(False)
@@ -210,15 +264,15 @@ class dialog:
             if self._can_query_remote_metadata():
                 try:
                     tables, views = self._get_remote_metadata()
-                    self._set_model_update_state(tk.NORMAL)
+                    self._set_model_update_state("normal")
                 except Exception:
                     tables = tables if tables is not None else []
                     views = views if views is not None else []
-                    self._set_model_update_state(tk.DISABLED)
+                    self._set_model_update_state("disabled")
             else:
                 tables = tables if tables is not None else []
                 views = views if views is not None else []
-                self._set_model_update_state(tk.DISABLED)
+                self._set_model_update_state("disabled")
 
         self.dashboard.update_data(
             tables=tables,
@@ -265,5 +319,5 @@ if __name__ == "__main__":
     except ImportError:
         pass
 
-    teste = dialog("Model Update")
+    teste = dialog(APP_TITLE)
     teste.start()

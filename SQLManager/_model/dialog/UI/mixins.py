@@ -1,4 +1,3 @@
-import tkinter as tk
 from abc import ABC, abstractmethod
 
 class ComponentMixin(ABC):
@@ -9,7 +8,7 @@ class ComponentMixin(ABC):
     def __init__(self):
         self.widget = None
 
-    def render(self, parent: tk.Widget, **pack_kwargs) -> tk.Widget:
+    def render(self, parent, **pack_kwargs):
         """
         Renderiza o componente no parent especificado e aplica os argumentos de layout.
         """
@@ -19,7 +18,7 @@ class ComponentMixin(ABC):
         return self.widget
 
     @abstractmethod
-    def _build(self, parent: tk.Widget) -> tk.Widget:
+    def _build(self, parent):
         pass
 
     def _bind_events(self):
