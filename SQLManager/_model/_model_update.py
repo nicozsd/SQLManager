@@ -168,7 +168,7 @@ class ModelUpdater(ModelUpdaterBase):
         if hasattr(self, 'db'):
             self.db.disconnect()    
     
-    def run(self, selected_tables=None, selected_views=None):
+    def run(self, selected_tables=None, selected_views=None, confirm_callback=None):
         '''Executa atualização completa'''
         print("="*40)
         print("MODEL UPDATE")
@@ -186,31 +186,13 @@ class ModelUpdater(ModelUpdaterBase):
             print(f"Faça {SystemController().custom_text('BACKUP', 'yellow', is_bold=True)} de src/model/tables antes de continuar.")
             
             ui_resposta = None
-            try:
-                import tkinter as tk
-                from tkinter import messagebox
-                
-                root = tk._default_root
-                is_temp_root = False
-                if root is None:
-                    root = tk.Tk()
-                    root.withdraw()
-                    root.attributes('-topmost', True)
-                    is_temp_root = True
-                    
-                ui_resposta = messagebox.askyesno(
-                    "Aviso de Segurança - SQLManager",
+            if confirm_callback is not None:
+                ui_resposta = bool(confirm_callback(
                     "ATENÇÃO!\n\n"
                     "Tabelas não existentes no banco de dados serão REMOVIDAS.\n"
                     "Faça BACKUP da pasta 'src/model/tables' antes de continuar.\n\n"
-                    "Deseja continuar com a atualização?",
-                    icon='warning'
-                )
-                
-                if is_temp_root:
-                    root.destroy()
-            except Exception:
-                pass # Falha ao abrir UI, segue para o fallback de terminal
+                    "Deseja continuar com a atualização?"
+                ))
                 
             if ui_resposta is None:
                 print(f"\nContinuar? ({SystemController().custom_text('y', 'green')}/{SystemController().custom_text('n', 'red')})")
