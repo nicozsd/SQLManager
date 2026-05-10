@@ -70,13 +70,13 @@ class ClickableRow(ctk.CTkFrame):
         self._on_change = on_change
 
         self._bar = ctk.CTkFrame(self, width=3, corner_radius=2)
-        self._bar.pack(side="left", fill="y", padx=(4, 8), pady=3)
+        self._bar.pack(side="left", fill="y", padx=(4, 8), pady=2)
 
         self._lbl = ctk.CTkLabel(
             self, text=text, anchor="w",
-            font=ctk.CTkFont("Segoe UI", 13),
+            font=ctk.CTkFont("Segoe UI", 12),
         )
-        self._lbl.pack(side="left", fill="x", expand=True, pady=5)
+        self._lbl.pack(side="left", fill="x", expand=True, pady=2)
 
         self._update()
         for w in (self, self._lbl, self._bar):
@@ -108,12 +108,14 @@ class CollapsibleSection(ctk.CTkFrame):
         super().__init__(master, fg_color=THEME["panel"], corner_radius=14, **kw)
         self.title      = title
         self.selectable = selectable
-        self._items:   list = []
-        self._vars:    dict = {}
-        self._widgets: dict = {}
-        self._expanded = False
-        self._body     = None
-        self._scroll   = None
+        self._items:    list = []
+        self._vars:     dict = {}
+        self._widgets:  dict = {}
+        self._expanded  = False
+        self._body      = None
+        self._scroll    = None
+        self._search_var: tk.StringVar | None = None
+        self._filter:   str = ""
 
         self._header = ctk.CTkButton(
             self,
@@ -169,7 +171,7 @@ class CollapsibleSection(ctk.CTkFrame):
 
         if self.selectable:
             tb = ctk.CTkFrame(self._body, fg_color="transparent")
-            tb.pack(fill="x", padx=10, pady=(8, 2))
+            tb.pack(fill="x", padx=10, pady=(8, 4))
             ctk.CTkButton(
                 tb, text="Selecionar Tudo", width=120, height=24,
                 fg_color=THEME["violet"], hover_color=THEME["violet_h"],
@@ -184,6 +186,19 @@ class CollapsibleSection(ctk.CTkFrame):
                 command=self.clear_selection,
             ).pack(side="left")
 
+            self._search_var = tk.StringVar()
+            self._search_var.trace_add("write", self._on_search)
+            ctk.CTkEntry(
+                self._body,
+                textvariable=self._search_var,
+                placeholder_text="Pesquisar...",
+                fg_color=THEME["input"], border_color=THEME["border"],
+                text_color=THEME["text"],
+                placeholder_text_color=THEME["dim"],
+                font=ctk.CTkFont("Segoe UI", 12),
+                corner_radius=8, height=30,
+            ).pack(fill="x", padx=10, pady=(0, 4))
+
         self._scroll = ctk.CTkScrollableFrame(
             self._body, height=160, fg_color="transparent",
             scrollbar_button_color=THEME["border"],
@@ -192,12 +207,21 @@ class CollapsibleSection(ctk.CTkFrame):
         self._scroll.pack(fill="both", expand=True, padx=6, pady=(4, 6))
         self._populate_scroll()
 
+    def _on_search(self, *_):
+        self._filter = (self._search_var.get() if self._search_var else "").lower()
+        self._populate_scroll()
+
     def _populate_scroll(self):
         for w in self._widgets.values():
             w.destroy()
         self._widgets.clear()
 
-        for item in self._items:
+        visible = [
+            item for item in self._items
+            if not self._filter or self._filter in item.lower()
+        ]
+
+        for item in visible:
             if self.selectable:
                 var = self._vars.setdefault(item, tk.BooleanVar(value=True))
                 row = ClickableRow(
@@ -207,11 +231,11 @@ class CollapsibleSection(ctk.CTkFrame):
                 row.pack(fill="x", pady=1)
             else:
                 row = ctk.CTkFrame(self._scroll, fg_color="transparent")
-                row.pack(fill="x", pady=1)
+                row.pack(fill="x", pady=0)
                 ctk.CTkLabel(
                     row, text=f"   {item}", anchor="w",
                     text_color=THEME["muted"],
-                    font=ctk.CTkFont("Segoe UI", 13),
+                    font=ctk.CTkFont("Segoe UI", 12),
                 ).pack(fill="x")
             self._widgets[item] = row
 
@@ -303,21 +327,7 @@ class dialog(ctk.CTk):
         frame.pack(fill="x")
         frame.pack_propagate(False)
 
-        banner = self.assets_dir / "banner.png"
-        if banner.exists():
-            try:
-                pil = PILImage.open(str(banner))
-                pil.thumbnail((980, 90), PILImage.LANCZOS)
-                self._banner = ctk.CTkImage(pil, size=(pil.width, pil.height))
-                ctk.CTkLabel(frame, image=self._banner, text="").place(
-                    relx=0.5, rely=0.5, anchor="center"
-                )
-            except Exception:
-                self._banner = None
-                self._fallback_title(frame)
-        else:
-            self._banner = None
-            self._fallback_title(frame)
+        self._fallback_title(frame)
 
         ctk.CTkFrame(frame, fg_color=THEME["cyan"], height=2, corner_radius=0).pack(
             side="bottom", fill="x", padx=40
