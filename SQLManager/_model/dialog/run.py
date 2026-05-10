@@ -1,6 +1,6 @@
 ﻿"""
 SQLManager -- Gerenciador de Modelos
-Interface grafica para configurar e executar o build inicial do modelo de dados.
+Interface para configurar, analisar e executar o build do modelo de dados.
 """
 import os
 import sys
@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 
 import customtkinter as ctk
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageDraw as PILDraw
 
 try:
     from dotenv import load_dotenv
@@ -23,25 +23,25 @@ ctk.set_default_color_theme("blue")
 APP_TITLE = "Gerenciador de Modelos -- SQLManager"
 
 THEME = {
-    "bg":          "#080C14",
-    "panel":       "#0D1424",
-    "surface":     "#151F33",
-    "input":       "#0B1322",
-    "border":      "#24324D",
-    "text":        "#F4F8FF",
-    "muted":       "#7C8FAB",
-    "dim":         "#4A5E7A",
-    "cyan":        "#00E5FF",
-    "violet":      "#7C3AED",
-    "violet_h":    "#6D28D9",
-    "green":       "#10B981",
-    "green_h":     "#059669",
-    "danger":      "#F43F5E",
-    "danger_h":    "#E11D48",
+    "bg":        "#080C14",
+    "panel":     "#0D1424",
+    "surface":   "#151F33",
+    "surface2":  "#1C2A44",
+    "input":     "#0B1322",
+    "border":    "#24324D",
+    "text":      "#F4F8FF",
+    "muted":     "#7C8FAB",
+    "dim":       "#3A4E66",
+    "cyan":      "#00E5FF",
+    "violet":    "#7C3AED",
+    "violet_h":  "#6D28D9",
+    "green":     "#10B981",
+    "green_h":   "#059669",
+    "orange":    "#F59E0B",
+    "danger":    "#F43F5E",
+    "danger_h":  "#E11D48",
 }
 
-# ---------------------------------------------------------------------------
-# Resolucao de paths
 # ---------------------------------------------------------------------------
 current_dir = os.path.dirname(os.path.abspath(__file__))
 model_dir   = os.path.dirname(current_dir)
@@ -58,55 +58,86 @@ if load_dotenv is not None:
 
 
 # ===========================================================================
-# Secao retratil (acordeao)
+# Linha clicavel sem checkbox
+# ===========================================================================
+
+class ClickableRow(ctk.CTkFrame):
+    """Linha de item selecionavel sem icones de checkbox."""
+
+    def __init__(self, master, text: str, var: tk.BooleanVar, on_change, **kw):
+        super().__init__(master, fg_color="transparent", cursor="hand2", **kw)
+        self._var = var
+        self._on_change = on_change
+
+        self._bar = ctk.CTkFrame(self, width=3, corner_radius=2)
+        self._bar.pack(side="left", fill="y", padx=(4, 8), pady=3)
+
+        self._lbl = ctk.CTkLabel(
+            self, text=text, anchor="w",
+            font=ctk.CTkFont("Segoe UI", 13),
+        )
+        self._lbl.pack(side="left", fill="x", expand=True, pady=5)
+
+        self._update()
+        for w in (self, self._lbl, self._bar):
+            w.bind("<Button-1>", self._click)
+
+    def _click(self, _e=None):
+        self._var.set(not self._var.get())
+        self._update()
+        self._on_change()
+
+    def _update(self):
+        if self._var.get():
+            self.configure(fg_color=THEME["surface2"])
+            self._bar.configure(fg_color=THEME["violet"])
+            self._lbl.configure(text_color=THEME["text"])
+        else:
+            self.configure(fg_color="transparent")
+            self._bar.configure(fg_color=THEME["dim"])
+            self._lbl.configure(text_color=THEME["muted"])
+
+
+# ===========================================================================
+# Secao retratil
 # ===========================================================================
 
 class CollapsibleSection(ctk.CTkFrame):
-    """
-    Painel retratil com cabecalho clicavel e lista scrollavel de itens.
-    Para secoes selecionaveis, cada item possui uma caixa de selecao.
-    Para secoes somente-leitura, os itens sao exibidos como rotulos.
-    """
 
     def __init__(self, master, title: str, selectable: bool = True, **kw):
-        super().__init__(master, fg_color=THEME["panel"], corner_radius=16, **kw)
+        super().__init__(master, fg_color=THEME["panel"], corner_radius=14, **kw)
         self.title      = title
         self.selectable = selectable
-        self._items:   list  = []
-        self._vars:    dict  = {}   # item -> tk.BooleanVar  (apenas selecionaveis)
-        self._widgets: dict  = {}   # item -> widget de linha
+        self._items:   list = []
+        self._vars:    dict = {}
+        self._widgets: dict = {}
         self._expanded = False
-        self._scroll   = None
         self._body     = None
+        self._scroll   = None
 
-        # Cabecalho (botao que abre/fecha a secao)
         self._header = ctk.CTkButton(
             self,
             text=self._header_text(),
             fg_color=THEME["surface"],
-            hover_color=THEME["border"],
+            hover_color=THEME["surface2"],
             text_color=THEME["text"],
             anchor="w",
-            corner_radius=14,
-            font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
+            corner_radius=12,
+            font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
             command=self._toggle,
         )
         self._header.pack(fill="x", padx=4, pady=4)
 
-    # ------------------------------------------------------------------
-
     def _header_text(self) -> str:
-        n     = len(self._items)
-        arrow = "[-]" if self._expanded else "[+]"
+        n = len(self._items)
+        arrow = "  [-]" if self._expanded else "  [+]"
         if self.selectable:
             sel = sum(1 for v in self._vars.values() if v.get())
-            return f"   {self.title}      {sel} de {n} selecionados   {arrow}"
-        return f"   {self.title}      {n} registros   {arrow}"
+            return f"   {self.title}      {sel} / {n} selecionados{arrow}"
+        return f"   {self.title}      {n} registros{arrow}"
 
     def _refresh_header(self, *_):
         self._header.configure(text=self._header_text())
-
-    # ------------------------------------------------------------------
 
     def _toggle(self):
         self._expanded = not self._expanded
@@ -124,8 +155,6 @@ class CollapsibleSection(ctk.CTkFrame):
         if self._expanded:
             self._toggle()
 
-    # ------------------------------------------------------------------
-
     def _show_body(self):
         if self._body is None:
             self._build_body()
@@ -136,27 +165,27 @@ class CollapsibleSection(ctk.CTkFrame):
             self._body.pack_forget()
 
     def _build_body(self):
-        self._body = ctk.CTkFrame(self, fg_color=THEME["input"], corner_radius=12)
+        self._body = ctk.CTkFrame(self, fg_color=THEME["input"], corner_radius=10)
 
         if self.selectable:
-            toolbar = ctk.CTkFrame(self._body, fg_color="transparent")
-            toolbar.pack(fill="x", padx=10, pady=(8, 2))
+            tb = ctk.CTkFrame(self._body, fg_color="transparent")
+            tb.pack(fill="x", padx=10, pady=(8, 2))
             ctk.CTkButton(
-                toolbar, text="Selecionar Tudo", width=130, height=26,
+                tb, text="Selecionar Tudo", width=120, height=24,
                 fg_color=THEME["violet"], hover_color=THEME["violet_h"],
-                font=ctk.CTkFont("Segoe UI", 12), corner_radius=8,
+                font=ctk.CTkFont("Segoe UI", 12), corner_radius=7,
                 command=self.select_all,
             ).pack(side="left", padx=(0, 6))
             ctk.CTkButton(
-                toolbar, text="Limpar", width=80, height=26,
+                tb, text="Limpar", width=70, height=24,
                 fg_color=THEME["border"], hover_color=THEME["surface"],
                 text_color=THEME["text"],
-                font=ctk.CTkFont("Segoe UI", 12), corner_radius=8,
+                font=ctk.CTkFont("Segoe UI", 12), corner_radius=7,
                 command=self.clear_selection,
             ).pack(side="left")
 
         self._scroll = ctk.CTkScrollableFrame(
-            self._body, height=170, fg_color="transparent",
+            self._body, height=160, fg_color="transparent",
             scrollbar_button_color=THEME["border"],
             scrollbar_button_hover_color=THEME["surface"],
         )
@@ -169,51 +198,35 @@ class CollapsibleSection(ctk.CTkFrame):
         self._widgets.clear()
 
         for item in self._items:
-            row = ctk.CTkFrame(self._scroll, fg_color="transparent")
-            row.pack(fill="x", pady=1)
-
             if self.selectable:
                 var = self._vars.setdefault(item, tk.BooleanVar(value=True))
-                cb = ctk.CTkCheckBox(
-                    row, text=item, variable=var,
-                    text_color=THEME["text"],
-                    checkmark_color=THEME["text"],
-                    fg_color=THEME["violet"],
-                    border_color=THEME["border"],
-                    hover_color=THEME["surface"],
-                    font=ctk.CTkFont("Segoe UI", 13),
-                    command=self._refresh_header,
+                row = ClickableRow(
+                    self._scroll, item, var,
+                    on_change=self._refresh_header,
                 )
-                cb.pack(anchor="w", padx=8)
+                row.pack(fill="x", pady=1)
             else:
-                lbl = ctk.CTkLabel(
-                    row, text=f"  {item}", anchor="w",
+                row = ctk.CTkFrame(self._scroll, fg_color="transparent")
+                row.pack(fill="x", pady=1)
+                ctk.CTkLabel(
+                    row, text=f"   {item}", anchor="w",
                     text_color=THEME["muted"],
                     font=ctk.CTkFont("Segoe UI", 13),
-                )
-                lbl.pack(fill="x", padx=8)
+                ).pack(fill="x")
             self._widgets[item] = row
-
-    # ------------------------------------------------------------------
 
     def set_items(self, items):
         previous = {k for k, v in self._vars.items() if v.get()}
         self._items = list(items or [])
-
-        # Remove vars de itens que saíram
         for k in list(self._vars.keys()):
             if k not in self._items:
                 del self._vars[k]
-
-        # Cria vars para novos itens
         for item in self._items:
             if item not in self._vars and self.selectable:
                 default = (item in previous) if previous else True
                 self._vars[item] = tk.BooleanVar(value=default)
-
         if self._body is not None and self._expanded:
             self._populate_scroll()
-
         self._refresh_header()
 
     def get_selected_items(self) -> list:
@@ -224,11 +237,17 @@ class CollapsibleSection(ctk.CTkFrame):
     def select_all(self):
         for v in self._vars.values():
             v.set(True)
+        for w in self._widgets.values():
+            if isinstance(w, ClickableRow):
+                w._update()
         self._refresh_header()
 
     def clear_selection(self):
         for v in self._vars.values():
             v.set(False)
+        for w in self._widgets.values():
+            if isinstance(w, ClickableRow):
+                w._update()
         self._refresh_header()
 
 
@@ -237,54 +256,50 @@ class CollapsibleSection(ctk.CTkFrame):
 # ===========================================================================
 
 class dialog(ctk.CTk):
-    """
-    Janela principal do Gerenciador de Modelos.
-    Interface: dialog(title).start()
-    """
-
     _POLL_MS = 80
 
     def __init__(self, title: str):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1240x780")
-        self.minsize(960, 620)
+        self.geometry("1260x800")
+        self.minsize(980, 640)
         self.configure(fg_color=THEME["bg"])
 
         self.assets_dir = Path(__file__).resolve().parent / "assets"
 
-        # Estado assincrono
         self.remote_metadata_loaded = False
-        self.pending_action         = None
-        self.confirm_message        = None
-        self.confirm_result         = False
-        self._confirm_win           = None
+        self.pending_action  = None
+        self.confirm_message = None
+        self.confirm_result  = False
+        self._confirm_win    = None
 
         self._build_ui()
         self._refresh_local_lists()
         self._update_remote_lists([], [])
         self._set_build_enabled(False)
+        self._set_analyze_enabled(False)
 
     # ------------------------------------------------------------------
-    # Construcao da interface
+    # Construcao
     # ------------------------------------------------------------------
 
     def _build_ui(self):
         self._build_header()
+        self._build_action_pane()
 
         body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=16, pady=(0, 0))
+        body.pack(fill="both", expand=True, padx=16, pady=(8, 0))
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
 
         self._build_left_panel(body)
         self._build_right_panel(body)
-        self._build_footer()
+        self._build_status_bar()
 
-    # -- Header --
+    # -- Banner --
 
     def _build_header(self):
-        frame = ctk.CTkFrame(self, fg_color=THEME["panel"], corner_radius=0, height=108)
+        frame = ctk.CTkFrame(self, fg_color=THEME["panel"], corner_radius=0, height=104)
         frame.pack(fill="x")
         frame.pack_propagate(False)
 
@@ -292,7 +307,7 @@ class dialog(ctk.CTk):
         if banner.exists():
             try:
                 pil = PILImage.open(str(banner))
-                pil.thumbnail((960, 92), PILImage.LANCZOS)
+                pil.thumbnail((980, 90), PILImage.LANCZOS)
                 self._banner = ctk.CTkImage(pil, size=(pil.width, pil.height))
                 ctk.CTkLabel(frame, image=self._banner, text="").place(
                     relx=0.5, rely=0.5, anchor="center"
@@ -304,37 +319,139 @@ class dialog(ctk.CTk):
             self._banner = None
             self._fallback_title(frame)
 
-        # Linha de acento inferior
-        ctk.CTkFrame(frame, fg_color=THEME["cyan"], height=3, corner_radius=0).pack(
-            side="bottom", fill="x", padx=48
+        ctk.CTkFrame(frame, fg_color=THEME["cyan"], height=2, corner_radius=0).pack(
+            side="bottom", fill="x", padx=40
         )
 
     def _fallback_title(self, parent):
         ctk.CTkLabel(
-            parent,
-            text=APP_TITLE,
+            parent, text=APP_TITLE,
             font=ctk.CTkFont("Segoe UI", 22, weight="bold"),
             text_color=THEME["text"],
         ).place(relx=0.5, rely=0.5, anchor="center")
+
+    # -- ActionPane (estilo AX2012: icone esquerda + texto direita) --
+
+    def _build_action_pane(self):
+        pane = ctk.CTkFrame(self, fg_color=THEME["panel"], corner_radius=0, height=54)
+        pane.pack(fill="x")
+        pane.pack_propagate(False)
+
+        ctk.CTkFrame(pane, fg_color=THEME["border"], height=1, corner_radius=0).pack(
+            fill="x", side="bottom"
+        )
+
+        inner = ctk.CTkFrame(pane, fg_color="transparent")
+        inner.pack(side="left", fill="y", padx=6)
+
+        ico_cancel  = self._make_icon("x",      THEME["danger"], 16)
+        ico_test    = self._make_icon("plug",    THEME["green"],  16)
+        ico_analyze = self._make_icon("lens",    THEME["cyan"],   16)
+        ico_build   = self._make_icon("arrow",   THEME["violet"], 16)
+
+        btn_cfg = dict(
+            fg_color="transparent",
+            hover_color=THEME["surface2"],
+            text_color=THEME["text"],
+            font=ctk.CTkFont("Segoe UI", 13),
+            corner_radius=8,
+            height=46,
+            anchor="w",
+            compound="left",
+        )
+
+        self.btn_cancel = ctk.CTkButton(
+            inner, text="  Cancelar", image=ico_cancel, width=124,
+            command=self.destroy, **btn_cfg,
+        )
+        self.btn_cancel.pack(side="left", padx=2)
+
+        self._pane_sep(inner)
+
+        self.btn_test = ctk.CTkButton(
+            inner, text="  Testar Conexao", image=ico_test, width=150,
+            command=self._request_test_connection, **btn_cfg,
+        )
+        self.btn_test.pack(side="left", padx=2)
+
+        self.btn_analyze = ctk.CTkButton(
+            inner, text="  Analisar", image=ico_analyze, width=116,
+            command=self._request_analyze,
+            state="disabled", **btn_cfg,
+        )
+        self.btn_analyze.pack(side="left", padx=2)
+
+        self._pane_sep(inner)
+
+        self.btn_build = ctk.CTkButton(
+            inner, text="  Executar Build", image=ico_build, width=150,
+            command=self._request_build,
+            state="disabled",
+            font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
+            fg_color="transparent",
+            hover_color=THEME["surface2"],
+            text_color=THEME["text"],
+            corner_radius=8, height=46, anchor="w", compound="left",
+        )
+        self.btn_build.pack(side="left", padx=2)
+
+    @staticmethod
+    def _pane_sep(parent):
+        ctk.CTkFrame(parent, fg_color=THEME["border"], width=1,
+                     corner_radius=0).pack(
+            side="left", fill="y", padx=8, pady=10
+        )
+
+    @staticmethod
+    def _make_icon(shape: str, color: str, size: int = 16) -> ctk.CTkImage:
+        img  = PILImage.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = PILDraw.Draw(img)
+        h    = color.lstrip("#")
+        c    = (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 255)
+        p    = 2
+
+        if shape == "x":
+            draw.line([(p, p), (size - p, size - p)], fill=c, width=2)
+            draw.line([(size - p, p), (p, size - p)], fill=c, width=2)
+
+        elif shape == "plug":
+            mid = size // 2
+            r   = size // 4
+            draw.ellipse([p, mid - r, p + r * 2, mid + r], outline=c, width=2)
+            draw.ellipse([size - p - r * 2, mid - r, size - p, mid + r],
+                         outline=c, width=2)
+            draw.line([(p + r * 2, mid), (size - p - r * 2, mid)], fill=c, width=2)
+
+        elif shape == "lens":
+            r  = size // 2 - p - 2
+            cx = r + p + 1
+            cy = r + p + 1
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=c, width=2)
+            lx = int(cx + r * 0.68)
+            ly = int(cy + r * 0.68)
+            draw.line([(lx, ly), (size - p, size - p)], fill=c, width=2)
+
+        elif shape == "arrow":
+            pts = [(p + 1, p), (p + 1, size - p), (size - p, size // 2)]
+            draw.polygon(pts, fill=c)
+
+        return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
     # -- Painel esquerdo --
 
     def _build_left_panel(self, body):
         outer = ctk.CTkScrollableFrame(
-            body,
-            width=340,
-            fg_color=THEME["panel"],
-            corner_radius=18,
+            body, width=336,
+            fg_color=THEME["panel"], corner_radius=16,
             scrollbar_button_color=THEME["border"],
             scrollbar_button_hover_color=THEME["surface"],
         )
-        outer.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=12)
+        outer.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=4)
 
-        # Banco de dados
         self._cat(outer, "BANCO DE DADOS")
         db_init = "MySQL" if os.getenv("DB_TYPE", "SQLSERVER").upper() == "MYSQL" else "SQL Server (SSMS)"
         self.var_db = tk.StringVar(value=db_init)
-        seg = ctk.CTkSegmentedButton(
+        ctk.CTkSegmentedButton(
             outer,
             values=["SQL Server (SSMS)", "MySQL"],
             variable=self.var_db,
@@ -342,23 +459,20 @@ class dialog(ctk.CTk):
             selected_color=THEME["violet"],
             selected_hover_color=THEME["violet_h"],
             unselected_color=THEME["surface"],
-            unselected_hover_color=THEME["border"],
+            unselected_hover_color=THEME["surface2"],
             text_color=THEME["text"],
-            font=ctk.CTkFont("Segoe UI", 13),
-            corner_radius=10,
+            font=ctk.CTkFont("Segoe UI", 12),
+            corner_radius=9,
             command=self._on_db_changed,
-        )
-        seg.pack(fill="x", padx=12, pady=(0, 14))
+        ).pack(fill="x", padx=12, pady=(0, 14))
 
-        # Credenciais
         self._cat(outer, "CREDENCIAIS DE ACESSO")
         self.e_server   = self._entry(outer, "Servidor / Host",  os.getenv("DB_SERVER",   ""))
         self.e_database = self._entry(outer, "Banco de Dados",   os.getenv("DB_DATABASE", ""))
         self.e_user     = self._entry(outer, "Usuario",          os.getenv("DB_USER",     ""))
         self.e_password = self._entry(outer, "Senha",            os.getenv("DB_PASSWORD", ""), show="*")
 
-        # Runtime
-        self._cat(outer, "OPCOES DE RUNTIME")
+        self._cat(outer, "RUNTIME")
         self.var_recid = tk.BooleanVar(value=self._env_bool("SQLMANAGER_REQUIRE_RECID", True))
         ctk.CTkSwitch(
             outer,
@@ -372,13 +486,10 @@ class dialog(ctk.CTk):
         ).pack(fill="x", padx=12, pady=(0, 16))
 
     def _cat(self, parent, text: str):
-        """Rotulo de categoria em maiusculas com linha separadora."""
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=12, pady=(14, 4))
         ctk.CTkLabel(
-            row,
-            text=text,
-            anchor="w",
+            row, text=text, anchor="w",
             font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
             text_color=THEME["dim"],
         ).pack(side="left")
@@ -389,18 +500,14 @@ class dialog(ctk.CTk):
     def _entry(self, parent, label: str, value: str = "", show: str = "") -> ctk.CTkEntry:
         ctk.CTkLabel(
             parent, text=label, anchor="w",
-            font=ctk.CTkFont("Segoe UI", 12),
-            text_color=THEME["muted"],
+            font=ctk.CTkFont("Segoe UI", 12), text_color=THEME["muted"],
         ).pack(fill="x", padx=12, pady=(0, 2))
         e = ctk.CTkEntry(
             parent,
-            fg_color=THEME["input"],
-            border_color=THEME["border"],
+            fg_color=THEME["input"], border_color=THEME["border"],
             text_color=THEME["text"],
             font=ctk.CTkFont("Segoe UI", 13),
-            show=show,
-            corner_radius=9,
-            height=38,
+            show=show, corner_radius=9, height=36,
         )
         e.pack(fill="x", padx=12, pady=(0, 8))
         if value:
@@ -411,72 +518,41 @@ class dialog(ctk.CTk):
 
     def _build_right_panel(self, body):
         scroll = ctk.CTkScrollableFrame(
-            body,
-            fg_color="transparent",
+            body, fg_color="transparent",
             scrollbar_button_color=THEME["border"],
             scrollbar_button_hover_color=THEME["surface"],
         )
-        scroll.grid(row=0, column=1, sticky="nsew", pady=12)
+        scroll.grid(row=0, column=1, sticky="nsew", pady=4)
 
-        self.sec_tables = CollapsibleSection(scroll, "Tabelas",      selectable=True)
+        self.sec_tables = CollapsibleSection(scroll, "Tabelas",     selectable=True)
         self.sec_tables.pack(fill="x", padx=4, pady=(0, 8))
 
-        self.sec_views  = CollapsibleSection(scroll, "Views",        selectable=True)
+        self.sec_views  = CollapsibleSection(scroll, "Views",       selectable=True)
         self.sec_views.pack(fill="x", padx=4, pady=(0, 8))
 
-        self.sec_edts   = CollapsibleSection(scroll, "EDTs",         selectable=False)
+        self.sec_edts   = CollapsibleSection(scroll, "EDTs",        selectable=False)
         self.sec_edts.pack(fill="x", padx=4, pady=(0, 8))
 
-        self.sec_enums  = CollapsibleSection(scroll, "Enumeracoes",  selectable=False)
+        self.sec_enums  = CollapsibleSection(scroll, "Enumeracoes", selectable=False)
         self.sec_enums.pack(fill="x", padx=4)
 
-    # -- Footer --
+    # -- Barra de status --
 
-    def _build_footer(self):
-        footer = ctk.CTkFrame(self, fg_color=THEME["panel"], corner_radius=0, height=80)
-        footer.pack(fill="x", side="bottom")
-        footer.pack_propagate(False)
-
-        # Linha de topo
-        ctk.CTkFrame(footer, fg_color=THEME["border"], height=1, corner_radius=0).pack(
+    def _build_status_bar(self):
+        bar = ctk.CTkFrame(self, fg_color=THEME["panel"], corner_radius=0, height=34)
+        bar.pack(fill="x", side="bottom")
+        bar.pack_propagate(False)
+        ctk.CTkFrame(bar, fg_color=THEME["border"], height=1, corner_radius=0).pack(
             fill="x", side="top"
         )
-
         self.lbl_status = ctk.CTkLabel(
-            footer,
+            bar,
             text="Pronto -- configure a conexao e teste antes de iniciar.",
             anchor="w",
             font=ctk.CTkFont("Segoe UI", 12),
             text_color=THEME["dim"],
         )
-        self.lbl_status.pack(side="left", padx=20, fill="x", expand=True)
-
-        self.btn_build = ctk.CTkButton(
-            footer, text="Executar Build",
-            fg_color=THEME["violet"], hover_color=THEME["violet_h"],
-            text_color=THEME["text"], font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-            corner_radius=12, width=180, height=48,
-            command=self._request_build,
-        )
-        self.btn_build.pack(side="right", padx=(6, 20), pady=16)
-
-        self.btn_test = ctk.CTkButton(
-            footer, text="Testar Conexao",
-            fg_color=THEME["green"], hover_color=THEME["green_h"],
-            text_color=THEME["text"], font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-            corner_radius=12, width=180, height=48,
-            command=self._request_test_connection,
-        )
-        self.btn_test.pack(side="right", padx=6, pady=16)
-
-        self.btn_cancel = ctk.CTkButton(
-            footer, text="Cancelar",
-            fg_color=THEME["danger"], hover_color=THEME["danger_h"],
-            text_color=THEME["text"], font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-            corner_radius=12, width=140, height=48,
-            command=self.destroy,
-        )
-        self.btn_cancel.pack(side="right", padx=6, pady=16)
+        self.lbl_status.pack(side="left", padx=16, fill="x", expand=True)
 
     # ------------------------------------------------------------------
     # Utilitarios
@@ -513,9 +589,14 @@ class dialog(ctk.CTk):
     def _set_build_enabled(self, enabled: bool):
         self.btn_build.configure(state="normal" if enabled else "disabled")
 
+    def _set_analyze_enabled(self, enabled: bool):
+        self.btn_analyze.configure(state="normal" if enabled else "disabled")
+
     def _set_status(self, msg: str, error: bool = False):
-        color = THEME["danger"] if error else THEME["muted"]
-        self.lbl_status.configure(text=msg, text_color=color)
+        self.lbl_status.configure(
+            text=msg,
+            text_color=THEME["danger"] if error else THEME["muted"],
+        )
 
     def _entry_val(self, e: ctk.CTkEntry) -> str:
         return e.get().strip()
@@ -530,11 +611,11 @@ class dialog(ctk.CTk):
         from SQLManager import CoreConfig
 
         db = "MYSQL" if self.var_db.get() == "MySQL" else "SQLSERVER"
-        os.environ["DB_TYPE"]               = db
-        os.environ["DB_SERVER"]             = self._entry_val(self.e_server)
-        os.environ["DB_DATABASE"]           = self._entry_val(self.e_database)
-        os.environ["DB_USER"]               = self._entry_val(self.e_user)
-        os.environ["DB_PASSWORD"]           = self._entry_val(self.e_password)
+        os.environ["DB_TYPE"]                  = db
+        os.environ["DB_SERVER"]                = self._entry_val(self.e_server)
+        os.environ["DB_DATABASE"]              = self._entry_val(self.e_database)
+        os.environ["DB_USER"]                  = self._entry_val(self.e_user)
+        os.environ["DB_PASSWORD"]              = self._entry_val(self.e_password)
         os.environ["SQLMANAGER_REQUIRE_RECID"] = "true" if self.var_recid.get() else "false"
         CoreConfig.configure(load_from_env=True)
 
@@ -546,9 +627,10 @@ class dialog(ctk.CTk):
         self.remote_metadata_loaded = False
         self._update_remote_lists([], [])
         self._set_build_enabled(False)
+        self._set_analyze_enabled(False)
 
     # ------------------------------------------------------------------
-    # Acoes principais
+    # Acoes
     # ------------------------------------------------------------------
 
     def _request_test_connection(self):
@@ -557,10 +639,10 @@ class dialog(ctk.CTk):
                 "Preencha servidor, banco, usuario e senha antes de testar.", error=True
             )
             return
-
         self._set_status("Estabelecendo conexao com o banco de dados...")
         self.btn_test.configure(state="disabled")
         self._set_build_enabled(False)
+        self._set_analyze_enabled(False)
 
         def worker():
             try:
@@ -584,7 +666,7 @@ class dialog(ctk.CTk):
 
     def _request_build(self):
         if not self.remote_metadata_loaded:
-            self._set_status("Teste a conexao com o banco antes de executar o build.", error=True)
+            self._set_status("Teste a conexao antes de executar o build.", error=True)
             return
         self._start_build()
 
@@ -592,6 +674,7 @@ class dialog(ctk.CTk):
         self._set_status("Gerando modelos -- aguarde...")
         self._set_build_enabled(False)
         self.btn_test.configure(state="disabled")
+        self._set_analyze_enabled(False)
 
         def confirm_callback(message):
             self.pending_action = ("confirm_from_worker", message)
@@ -617,8 +700,160 @@ class dialog(ctk.CTk):
         self.confirm_result = False
         threading.Thread(target=worker, daemon=True).start()
 
+    def _request_analyze(self):
+        if not self.remote_metadata_loaded:
+            self._set_status("Teste a conexao antes de analisar.", error=True)
+            return
+
+        db_tables    = set(self.sec_tables._items)
+        db_views     = set(self.sec_views._items)
+        local_tables = set(self._local_files(self._model_folder("tables")))
+        local_views  = set(self._local_files(self._model_folder("views")))
+
+        result = {
+            "tables": {
+                "novos":  sorted(db_tables - local_tables),
+                "modelo": sorted(db_tables & local_tables),
+                "orfaos": sorted(local_tables - db_tables),
+            },
+            "views": {
+                "novos":  sorted(db_views - local_views),
+                "modelo": sorted(db_views & local_views),
+                "orfaos": sorted(local_views - db_views),
+            },
+        }
+        self._show_analysis(result)
+
+    def _show_analysis(self, result: dict):
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Analise de Impacto")
+        dlg.geometry("1020x640")
+        dlg.minsize(820, 500)
+        dlg.configure(fg_color=THEME["bg"])
+        dlg.grab_set()
+        dlg.focus_set()
+
+        # Faixa de acento
+        ctk.CTkFrame(dlg, fg_color=THEME["cyan"], height=3, corner_radius=0).pack(fill="x")
+
+        # Titulo
+        hdr = ctk.CTkFrame(dlg, fg_color="transparent")
+        hdr.pack(fill="x", padx=24, pady=(14, 6))
+        ctk.CTkLabel(
+            hdr, text="Analise de Impacto",
+            font=ctk.CTkFont("Segoe UI", 18, weight="bold"),
+            text_color=THEME["text"],
+        ).pack(side="left")
+        ctk.CTkLabel(
+            hdr,
+            text="  Compare o banco de dados com os arquivos de modelo ja gerados",
+            font=ctk.CTkFont("Segoe UI", 12),
+            text_color=THEME["muted"],
+        ).pack(side="left", pady=4)
+
+        ctk.CTkFrame(dlg, fg_color=THEME["border"], height=1, corner_radius=0).pack(
+            fill="x", padx=24
+        )
+
+        scroll = ctk.CTkScrollableFrame(
+            dlg, fg_color="transparent",
+            scrollbar_button_color=THEME["border"],
+            scrollbar_button_hover_color=THEME["surface"],
+        )
+        scroll.pack(fill="both", expand=True, padx=16, pady=8)
+
+        self._analysis_section(
+            scroll, "TABELAS",
+            result["tables"],
+            len(self.sec_tables._items),
+        )
+        ctk.CTkFrame(scroll, fg_color=THEME["border"], height=1).pack(
+            fill="x", pady=14
+        )
+        self._analysis_section(
+            scroll, "VIEWS",
+            result["views"],
+            len(self.sec_views._items),
+        )
+
+        ctk.CTkButton(
+            dlg, text="Fechar", width=120, height=36,
+            fg_color=THEME["surface"], hover_color=THEME["border"],
+            text_color=THEME["text"], font=ctk.CTkFont("Segoe UI", 13),
+            corner_radius=9, command=dlg.destroy,
+        ).pack(pady=(4, 14))
+
+    def _analysis_section(self, parent, title: str, data: dict, db_count: int):
+        top = ctk.CTkFrame(parent, fg_color="transparent")
+        top.pack(fill="x", pady=(6, 8))
+        ctk.CTkLabel(
+            top, text=title,
+            font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
+            text_color=THEME["dim"],
+        ).pack(side="left")
+        ctk.CTkLabel(
+            top,
+            text=f"   {db_count} no banco de dados",
+            font=ctk.CTkFont("Segoe UI", 12),
+            text_color=THEME["muted"],
+        ).pack(side="left")
+
+        cols = ctk.CTkFrame(parent, fg_color="transparent")
+        cols.pack(fill="x")
+        cols.columnconfigure(0, weight=1)
+        cols.columnconfigure(1, weight=1)
+        cols.columnconfigure(2, weight=1)
+
+        specs = [
+            ("Novos no Banco",   data["novos"],  THEME["green"],
+             "Serao criados no modelo"),
+            ("Ja no Modelo",     data["modelo"], THEME["cyan"],
+             "Serao regenerados"),
+            ("Apenas Local",     data["orfaos"], THEME["orange"],
+             "Nao estao mais no banco"),
+        ]
+        for col, (label, items, color, hint) in enumerate(specs):
+            px = (0, 0) if col == 0 else (6, 0)
+            panel = ctk.CTkFrame(cols, fg_color=THEME["panel"], corner_radius=12)
+            panel.grid(row=0, column=col, sticky="nsew", padx=px)
+
+            ctk.CTkFrame(panel, fg_color=color, height=3, corner_radius=0).pack(fill="x")
+
+            ctk.CTkLabel(
+                panel,
+                text=f"{label}   ({len(items)})",
+                font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
+                text_color=color, anchor="w",
+            ).pack(anchor="w", padx=12, pady=(8, 1))
+            ctk.CTkLabel(
+                panel, text=hint,
+                font=ctk.CTkFont("Segoe UI", 11),
+                text_color=THEME["dim"], anchor="w",
+            ).pack(anchor="w", padx=12, pady=(0, 6))
+
+            sf = ctk.CTkScrollableFrame(
+                panel, height=130, fg_color="transparent",
+                scrollbar_button_color=THEME["border"],
+                scrollbar_button_hover_color=THEME["surface"],
+            )
+            sf.pack(fill="both", expand=True, padx=6, pady=(0, 8))
+
+            if not items:
+                ctk.CTkLabel(
+                    sf, text="Nenhum", anchor="w",
+                    text_color=THEME["dim"],
+                    font=ctk.CTkFont("Segoe UI", 12),
+                ).pack(anchor="w", padx=8, pady=6)
+            else:
+                for item in items:
+                    ctk.CTkLabel(
+                        sf, text=item, anchor="w",
+                        text_color=THEME["muted"],
+                        font=ctk.CTkFont("Segoe UI", 12),
+                    ).pack(fill="x", padx=8, pady=1)
+
     # ------------------------------------------------------------------
-    # Polling de acoes assincronas (thread-safe via after)
+    # Polling
     # ------------------------------------------------------------------
 
     def _poll(self):
@@ -638,7 +873,6 @@ class dialog(ctk.CTk):
             _, tables, views = action
             self.remote_metadata_loaded = True
             self._update_remote_lists(tables, views)
-            # Expandir automaticamente apos carregar dados remotos
             self.sec_tables.expand()
             self.sec_views.expand()
             self._set_status(
@@ -646,6 +880,7 @@ class dialog(ctk.CTk):
             )
             self.btn_test.configure(state="normal")
             self._set_build_enabled(True)
+            self._set_analyze_enabled(True)
 
         elif kind == "connection_error":
             _, error = action
@@ -654,6 +889,7 @@ class dialog(ctk.CTk):
             self._set_status(f"Falha na conexao: {error}", error=True)
             self.btn_test.configure(state="normal")
             self._set_build_enabled(False)
+            self._set_analyze_enabled(False)
 
         elif kind == "confirm_from_worker":
             _, message = action
@@ -664,6 +900,7 @@ class dialog(ctk.CTk):
             self._set_status("Build concluido com sucesso.")
             self.btn_test.configure(state="normal")
             self._set_build_enabled(True)
+            self._set_analyze_enabled(True)
             self._refresh_local_lists()
             self.sec_edts.expand()
             self.sec_enums.expand()
@@ -673,9 +910,10 @@ class dialog(ctk.CTk):
             self._set_status(f"Falha no build: {error}", error=True)
             self.btn_test.configure(state="normal")
             self._set_build_enabled(self.remote_metadata_loaded)
+            self._set_analyze_enabled(self.remote_metadata_loaded)
 
     # ------------------------------------------------------------------
-    # Dialog de confirmacao
+    # Modal de confirmacao
     # ------------------------------------------------------------------
 
     def _show_confirm(self, message: str):
@@ -684,65 +922,57 @@ class dialog(ctk.CTk):
 
         dlg = ctk.CTkToplevel(self)
         dlg.title("Confirmacao")
-        dlg.geometry("500x260")
+        dlg.geometry("500x250")
         dlg.resizable(False, False)
         dlg.configure(fg_color=THEME["panel"])
         dlg.grab_set()
         dlg.focus_set()
         self._confirm_win = dlg
 
-        # Faixa de acento no topo
-        ctk.CTkFrame(dlg, fg_color=THEME["violet"], height=4, corner_radius=0).pack(
-            fill="x"
-        )
+        ctk.CTkFrame(dlg, fg_color=THEME["violet"], height=4, corner_radius=0).pack(fill="x")
 
         ctk.CTkLabel(
-            dlg,
-            text="Confirmacao necessaria",
-            font=ctk.CTkFont("Segoe UI", 17, weight="bold"),
+            dlg, text="Confirmacao necessaria",
+            font=ctk.CTkFont("Segoe UI", 16, weight="bold"),
             text_color=THEME["text"],
-        ).pack(pady=(18, 6), padx=24, anchor="w")
+        ).pack(pady=(16, 6), padx=24, anchor="w")
 
         ctk.CTkLabel(
-            dlg,
-            text=message,
-            wraplength=460,
-            justify="left",
-            font=ctk.CTkFont("Segoe UI", 13),
-            text_color=THEME["muted"],
-        ).pack(padx=24, pady=(0, 20), anchor="w")
+            dlg, text=message, wraplength=460, justify="left",
+            font=ctk.CTkFont("Segoe UI", 13), text_color=THEME["muted"],
+        ).pack(padx=24, pady=(0, 18), anchor="w")
 
-        btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
-        btn_row.pack(fill="x", padx=24, pady=(0, 24))
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(fill="x", padx=24, pady=(0, 20))
 
-        def _confirm():
+        def _yes():
             self.confirm_result  = True
             self.confirm_message = None
             dlg.destroy()
 
-        def _deny():
+        def _no():
             self.confirm_result  = False
             self.confirm_message = None
             dlg.destroy()
 
         ctk.CTkButton(
-            btn_row, text="Confirmar",
+            row, text="Confirmar",
             fg_color=THEME["violet"], hover_color=THEME["violet_h"],
-            width=170, height=44, corner_radius=10,
-            font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-            command=_confirm,
+            width=170, height=40, corner_radius=9,
+            font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
+            command=_yes,
         ).pack(side="left", expand=True, fill="x", padx=(0, 6))
 
         ctk.CTkButton(
-            btn_row, text="Cancelar",
+            row, text="Cancelar",
             fg_color=THEME["danger"], hover_color=THEME["danger_h"],
-            width=170, height=44, corner_radius=10,
-            font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-            command=_deny,
+            width=170, height=40, corner_radius=9,
+            font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
+            command=_no,
         ).pack(side="right", expand=True, fill="x", padx=(6, 0))
 
     # ------------------------------------------------------------------
-    # Interface publica
+    # Entrada publica
     # ------------------------------------------------------------------
 
     def start(self):
