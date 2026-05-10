@@ -3,6 +3,8 @@ SQLManager -- Gerenciador de Modelos
 Interface para configurar, analisar e executar o build do modelo de dados.
 """
 import os
+import queue
+import re
 import sys
 import threading
 import tkinter as tk
@@ -55,6 +57,29 @@ if current_dir not in sys.path:
 if load_dotenv is not None:
     load_dotenv(os.path.join(os.getcwd(), ".env"))
     load_dotenv(os.path.join(root_dir, ".env"))
+
+
+# ===========================================================================
+# Redirecionador de stdout para fila thread-safe
+# ===========================================================================
+
+class _QueueWriter:
+    """Captura print() do worker thread e envia para uma Queue."""
+    _ANSI = re.compile(r'\x1b\[[0-9;]*m')
+
+    def __init__(self, q: queue.Queue):
+        self._q = q
+
+    def write(self, s: str):
+        clean = self._ANSI.sub('', s)
+        if clean:
+            self._q.put(clean)
+
+    def flush(self):
+        pass
+
+    def isatty(self) -> bool:
+        return False
 
 
 # ===========================================================================
@@ -680,7 +705,104 @@ class dialog(ctk.CTk):
         if not self.remote_metadata_loaded:
             self._set_status("Teste a conexao antes de executar o build.", error=True)
             return
+        self._open_build_window()
+
+    def _open_build_window(self):
+        self._log_q    = queue.Queue()
+        self._log_done = False
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Executando Build")
+        dlg.geometry("920x580")
+        dlg.minsize(700, 400)
+        dlg.configure(fg_color=THEME["bg"])
+        dlg.grab_set()
+        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+        self._log_dlg = dlg
+
+        ctk.CTkFrame(dlg, fg_color=THEME["violet"], height=3, corner_radius=0).pack(fill="x")
+
+        hdr = ctk.CTkFrame(dlg, fg_color="transparent")
+        hdr.pack(fill="x", padx=20, pady=(12, 4))
+        ctk.CTkLabel(
+            hdr, text="Build",
+            font=ctk.CTkFont("Segoe UI", 15, weight="bold"),
+            text_color=THEME["text"],
+        ).pack(side="left")
+        self._log_status_lbl = ctk.CTkLabel(
+            hdr, text="em andamento...",
+            font=ctk.CTkFont("Segoe UI", 11),
+            text_color=THEME["muted"],
+        )
+        self._log_status_lbl.pack(side="right")
+
+        ctk.CTkFrame(dlg, fg_color=THEME["border"], height=1, corner_radius=0).pack(
+            fill="x", padx=16, pady=(0, 6)
+        )
+
+        self._log_box = ctk.CTkTextbox(
+            dlg,
+            fg_color="#070C14",
+            text_color="#A0BDD0",
+            font=ctk.CTkFont("Consolas", 11),
+            border_color=THEME["border"],
+            border_width=1,
+            corner_radius=8,
+            state="disabled",
+            wrap="none",
+        )
+        self._log_box.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        self._log_close_btn = ctk.CTkButton(
+            dlg, text="Fechar", width=130, height=34,
+            fg_color=THEME["surface"], hover_color=THEME["border"],
+            text_color=THEME["dim"],
+            font=ctk.CTkFont("Segoe UI", 12), corner_radius=8,
+            state="disabled",
+            command=dlg.destroy,
+        )
+        self._log_close_btn.pack(pady=(0, 14))
+
+        dlg.after(80, self._poll_log)
         self._start_build()
+
+    def _poll_log(self):
+        try:
+            while True:
+                chunk = self._log_q.get_nowait()
+                self._log_box.configure(state="normal")
+                self._log_box.insert("end", chunk)
+                if not chunk.endswith("\n"):
+                    self._log_box.insert("end", "\n")
+                self._log_box.see("end")
+                self._log_box.configure(state="disabled")
+        except queue.Empty:
+            pass
+
+        if not self._log_done:
+            try:
+                self._log_dlg.after(80, self._poll_log)
+            except Exception:
+                pass
+
+    def _finalize_log(self, success: bool):
+        try:
+            while True:
+                chunk = self._log_q.get_nowait()
+                self._log_box.configure(state="normal")
+                self._log_box.insert("end", chunk)
+                if not chunk.endswith("\n"):
+                    self._log_box.insert("end", "\n")
+                self._log_box.see("end")
+                self._log_box.configure(state="disabled")
+        except queue.Empty:
+            pass
+        if hasattr(self, '_log_dlg') and self._log_dlg.winfo_exists():
+            color  = THEME["green"] if success else THEME["danger"]
+            label  = "Concluido com sucesso." if success else "Falha na execucao."
+            self._log_status_lbl.configure(text=label, text_color=color)
+            self._log_close_btn.configure(state="normal", text_color=THEME["text"])
+            self._log_dlg.protocol("WM_DELETE_WINDOW", self._log_dlg.destroy)
 
     def _start_build(self):
         self._set_status("Gerando modelos -- aguarde...")
@@ -696,6 +818,8 @@ class dialog(ctk.CTk):
             return self.confirm_result
 
         def worker():
+            old_stdout = sys.stdout
+            sys.stdout  = _QueueWriter(self._log_q)
             try:
                 from SQLManager._model._model_update import ModelUpdater
 
@@ -708,6 +832,9 @@ class dialog(ctk.CTk):
                 self.pending_action = ("build_success",)
             except Exception as exc:
                 self.pending_action = ("build_error", str(exc))
+            finally:
+                sys.stdout  = old_stdout
+                self._log_done = True
 
         self.confirm_result = False
         threading.Thread(target=worker, daemon=True).start()
@@ -916,6 +1043,7 @@ class dialog(ctk.CTk):
             self._refresh_local_lists()
             self.sec_edts.expand()
             self.sec_enums.expand()
+            self._finalize_log(success=True)
 
         elif kind == "build_error":
             _, error = action
@@ -923,6 +1051,7 @@ class dialog(ctk.CTk):
             self.btn_test.configure(state="normal")
             self._set_build_enabled(self.remote_metadata_loaded)
             self._set_analyze_enabled(self.remote_metadata_loaded)
+            self._finalize_log(success=False)
 
     # ------------------------------------------------------------------
     # Modal de confirmacao
