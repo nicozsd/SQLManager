@@ -25,10 +25,11 @@ setup(
     install_requires=[
         "pyodbc>=4.0.0",
         "python-dotenv>=0.19.0",
-        "flask-socketio>=5.0.0",        
+        "flask-socketio>=5.0.0",
         "pymysql>=1.0.0",
         "cryptography>=3.4.0",
-        "pygame>=2.6.0",
+        "customtkinter>=5.2.0",
+        "Pillow>=10.0.0",
     ],    
     classifiers=[
         "Development Status :: 4 - Beta",
