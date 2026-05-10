@@ -811,9 +811,13 @@ class dialog(ctk.CTk):
         self._set_analyze_enabled(False)
 
         def confirm_callback(message):
+            import time
             self.pending_action = ("confirm_from_worker", message)
+            # Fase 1: aguarda a thread principal registrar confirm_message (sai de None)
+            while self.confirm_message is None:
+                time.sleep(0.05)
+            # Fase 2: aguarda o usuario responder (volta a None)
             while self.confirm_message is not None:
-                import time
                 time.sleep(0.05)
             return self.confirm_result
 
