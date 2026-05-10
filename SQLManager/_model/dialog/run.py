@@ -69,14 +69,15 @@ class ClickableRow(ctk.CTkFrame):
         self._var = var
         self._on_change = on_change
 
-        self._bar = ctk.CTkFrame(self, width=3, corner_radius=2)
-        self._bar.pack(side="left", fill="y", padx=(4, 8), pady=2)
+        self._bar = ctk.CTkFrame(self, width=3, height=16, corner_radius=2)
+        self._bar.pack(side="left", fill="y", padx=(4, 6), pady=0)
 
         self._lbl = ctk.CTkLabel(
             self, text=text, anchor="w",
-            font=ctk.CTkFont("Segoe UI", 12),
+            font=ctk.CTkFont("Segoe UI", 11),
+            height=22,
         )
-        self._lbl.pack(side="left", fill="x", expand=True, pady=2)
+        self._lbl.pack(side="left", fill="x", expand=True, pady=0)
 
         self._update()
         for w in (self, self._lbl, self._bar):
@@ -200,11 +201,11 @@ class CollapsibleSection(ctk.CTkFrame):
             ).pack(fill="x", padx=10, pady=(0, 4))
 
         self._scroll = ctk.CTkScrollableFrame(
-            self._body, height=160, fg_color="transparent",
+            self._body, height=200, fg_color="transparent",
             scrollbar_button_color=THEME["border"],
             scrollbar_button_hover_color=THEME["surface"],
         )
-        self._scroll.pack(fill="both", expand=True, padx=6, pady=(4, 6))
+        self._scroll.pack(fill="both", expand=True, padx=6, pady=(2, 6))
         self._populate_scroll()
 
     def _on_search(self, *_):
@@ -228,14 +229,15 @@ class CollapsibleSection(ctk.CTkFrame):
                     self._scroll, item, var,
                     on_change=self._refresh_header,
                 )
-                row.pack(fill="x", pady=1)
+                row.pack(fill="x", pady=0)
             else:
                 row = ctk.CTkFrame(self._scroll, fg_color="transparent")
                 row.pack(fill="x", pady=0)
                 ctk.CTkLabel(
                     row, text=f"   {item}", anchor="w",
                     text_color=THEME["muted"],
-                    font=ctk.CTkFont("Segoe UI", 12),
+                    font=ctk.CTkFont("Segoe UI", 11),
+                    height=22,
                 ).pack(fill="x")
             self._widgets[item] = row
 
