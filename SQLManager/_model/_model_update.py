@@ -99,6 +99,8 @@ class ModelUpdater(ModelUpdaterBase):
         '''Gera __init__.py da pasta src/model/'''
         model_init_file = self.model_path / "__init__.py"
         content = (
+            "import sys\n\n"
+            "sys.modules.setdefault(\"model\", sys.modules[__name__])\n\n"
             "from . import EDTs   as EDTPack\n"
             "from . import enum   as EnumPack\n"
             "from . import views  as ViewPack\n"
