@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="SQLManager",
-    version="4.5.0",
+    version="4.4.0",
     description="Sistema para gerenciamento de banco de dados e validações",
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
