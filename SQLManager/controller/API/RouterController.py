@@ -15,7 +15,7 @@ from ...connection import database_connection
 
 from ..model             import TableController, ViewController
 from ..SystemController  import SystemController
-from ..API               import WebSocketManager
+from .WebSocketManager   import WebSocketManager
 from ..Cache             import DataPulseCache
 
 try:
