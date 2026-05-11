@@ -7,7 +7,7 @@ from ...CoreConfig import CoreConfig
 
 from ..model    import BaseEnumController, EDTController
 from ..Cache    import DataPulseCache
-from ..managers import FieldCondition, BinaryExpression
+from ._conditions_Managers import FieldCondition, BinaryExpression
 
 if TYPE_CHECKING:    
     from ..model import ViewController, TableController

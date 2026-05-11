@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
 
 import inspect
 import types
 from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
 
-from ..managers import FieldCondition, BinaryExpression
+from ._conditions_Managers import FieldCondition, BinaryExpression
 
 if TYPE_CHECKING:    
     from ..model import EDTController, BaseEnumController, TableController
@@ -162,6 +164,9 @@ class RelationManager:
     
     def _extract_field_name(self, field: Union[str, EDTController, BaseEnumController]) -> str:
         '''Extrai o nome do campo de um EDT/Enum ou string'''
+        from ..model.BaseEnumController import BaseEnumController
+        from ..model.EDTController import EDTController
+
         if isinstance(field, (EDTController, BaseEnumController)):
             return field.field_name
         return field

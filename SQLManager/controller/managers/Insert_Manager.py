@@ -14,7 +14,7 @@ class InsertRecordsetWrapper:
         self._manager = manager
         self._result  = None
         
-    def where(self, key_column: Union[str, EDTController, Any]) -> int:
+    def where(self, key_column: Union[str, 'EDTController', Any]) -> int:
         """Executa com filtro WHERE"""
         return self._manager.where(key_column)
     
@@ -87,7 +87,7 @@ class InsertRecordsetManager:
         else:
             raise Exception("Formato de dados não suportado. Use dict, dataclass ou tuplas com colunas definidas")
     
-    def where(self, key_column: Union[str, EDTController, Any]) -> int:
+    def where(self, key_column: Union[str, 'EDTController', Any]) -> int:
         """
         Define a coluna de chave para comparação e executa (insere apenas se não existir)
         Args:
@@ -258,6 +258,9 @@ class InsertManager:
         Returns:
             bool: True se inserido com sucesso
         """
+        from ..model.BaseEnumController import BaseEnumController
+        from ..model.EDTController import EDTController
+
         # Obter colunas com DEFAULT (usando cache)
         columns_with_default = controller.get_columns_with_defaults()
         

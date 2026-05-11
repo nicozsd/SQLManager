@@ -4,7 +4,7 @@ from functools import wraps
 from typing    import Optional, Union, Callable, TYPE_CHECKING
 
 from ..Cache    import DataPulseCache
-from ..managers import FieldCondition, BinaryExpression
+from ._conditions_Managers import FieldCondition, BinaryExpression
 
 if TYPE_CHECKING:
     from ..model import TableController, BaseEnumController, EDTController

@@ -3,7 +3,7 @@
 from functools import wraps
 from typing    import Optional, Union, Callable, TYPE_CHECKING
 
-from ..managers import FieldCondition, BinaryExpression
+from ._conditions_Managers import FieldCondition, BinaryExpression
 from ..Cache    import DataPulseCache
 
 if TYPE_CHECKING:
