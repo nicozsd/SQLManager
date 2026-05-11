@@ -40,6 +40,9 @@ class UpdateManager:
         Returns:
             bool: True se atualizado com sucesso
         """
+        from ..model.BaseEnumController import BaseEnumController
+        from ..model.EDTController import EDTController
+
         recid_instance  = controller._get_field_instance('RECID')
         record          = list(filter(lambda r: r['RECID'] == recid_instance.value, controller.records))
         
