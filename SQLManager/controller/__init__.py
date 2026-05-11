@@ -4,7 +4,8 @@ from .Database import DatabaseWatcher
 from .model    import EDTController, BaseEnumController, TableController, ViewController
 from .dialect  import DialectManager
 
-from . import SystemController, NumberSequenceController
+from .SystemController         import SystemController
+from .NumberSequenceController import NumberSequenceController
 
 
 __all__ = [
