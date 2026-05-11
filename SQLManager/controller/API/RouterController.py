@@ -78,7 +78,7 @@ class AutoRouter:
         self._query_cache:     Dict[str, tuple]          = {}  # Cache de queries: {cache_key: (timestamp, data)}
         self._cache_ttl = 30  # TTL do cache em segundos
 
-        cache_config = self.config.get('DataPulseCache', {})
+        cache_config = self.config.get('data_pulse_cache') or self.config.get('DataPulseCache', {})
         DataPulseCache.configure(
             enabled=cache_config.get('enabled', True),
             default_ttl=cache_config.get('ttl', 45),
