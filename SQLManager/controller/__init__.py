@@ -1,30 +1,15 @@
-from .EDTController      import EDTController
-from .BaseEnumController import BaseEnumController
-from .TableController    import TableController
-from .SystemController   import SystemController
-from .NumberSequenceController import NumberSequenceController
+from .API      import AutoRouter, WebSocketManager
+from .Cache    import DataPulseCache
+from .Database import DatabaseWatcher
+from .model    import EDTController, BaseEnumController, TableController, ViewController
+from .dialect  import DialectManager
 
-''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
+from . import SystemController, NumberSequenceController
 
-from .ViewController    import ViewController
-
-''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 12/03/2026 '''
-from .WebSocketManager  import WebSocketManager
-''' [END CODE] Project: SQLManager Version 4.0 / issue: #7 / made by: Nicolas Santos / created: 12/03/2026 '''
-from .DataPulseCache    import DataPulseCache, data_pulse_cache
-
-from.databaseWatchController import DatabaseWatcher
 
 __all__ = [
-    'EDTController',
-    'BaseEnumController',
-    'TableController',
-    'ViewController',
-    'SystemController',
-    'NumberSequenceController',
-    'WebSocketManager',
-    'DataPulseCache',
-    'data_pulse_cache',
-    'DatabaseWatcher'
+    'EDTController'   , 'BaseEnumController'      , 'TableController'  , 'ViewController',
+    'SystemController', 'NumberSequenceController', 'WebSocketManager' , 'DataPulseCache',        
+    'DatabaseWatcher' , 'AutoRouter'              , 'DialectManager'
 ]
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''

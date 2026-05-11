@@ -3,13 +3,11 @@
 from functools import wraps
 from typing    import Any, Optional, Union, Callable, List, Dict, TYPE_CHECKING
 
-from ..BaseEnumController  import BaseEnumController
-from ..EDTController       import EDTController
-from ..DataPulseCache      import data_pulse_cache
+from ..Cache import DataPulseCache
 
 if TYPE_CHECKING:
-    from ..TableController import TableController
-
+    from ..model import BaseEnumController, EDTController, TableController
+    
 class InsertRecordsetWrapper:
     """Wrapper que permite uso com ou sem .where()"""
     def __init__(self, manager):
@@ -161,7 +159,7 @@ class InsertRecordsetManager:
                     affected_rows = self._insert_all()
                         
             if affected_rows:
-                data_pulse_cache.invalidate_controller(self._controller)
+                DataPulseCache.invalidate_controller(self._controller)
 
             return affected_rows
         except Exception as error:            
@@ -289,7 +287,7 @@ class InsertManager:
                 new_recid = controller.execute_insert_and_get_id(trs, query, tuple(values))
             ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
 
-            data_pulse_cache.invalidate_controller(controller)
+            DataPulseCache.invalidate_controller(controller)
 
             if new_recid is not None:
                 recid_instance = controller._get_field_instance('RECID')

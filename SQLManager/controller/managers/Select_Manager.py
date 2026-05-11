@@ -2,18 +2,15 @@
 import weakref
 import sys
 
-from typing import Any, List, Dict, Optional, Union, TYPE_CHECKING
+from typing        import Any, List, Dict, Optional, Union, TYPE_CHECKING
+from ...CoreConfig import CoreConfig
 
-from ..BaseEnumController  import BaseEnumController
-from ..EDTController       import EDTController
-from ..DataPulseCache      import data_pulse_cache
-from ...CoreConfig         import CoreConfig
+from ..model    import BaseEnumController, EDTController
+from ..Cache    import DataPulseCache
+from ..managers import FieldCondition, BinaryExpression
 
-from ._conditions_Managers import FieldCondition, BinaryExpression
-
-if TYPE_CHECKING:
-    from ..TableController import TableController
-    from ..ViewController  import ViewController
+if TYPE_CHECKING:    
+    from ..model import ViewController, TableController
 
 class AutoExecuteWrapper:
     '''Wrapper que delega métodos para SelectManager mas auto-executa quando não há mais encadeamento'''
@@ -281,7 +278,7 @@ class SelectManager:
             raise Exception(validate['error'])
 
         cache_config = CoreConfig.get_cache_config()
-        data_pulse_cache.configure(
+        DataPulseCache.configure(
             enabled=cache_config.get('enabled'),
             default_ttl=cache_config.get('ttl'),
             max_entries=cache_config.get('max_entries')
@@ -436,7 +433,7 @@ class SelectManager:
         
         cache_tables = [self._controller.source_name]
         cache_tables.extend([ctrl.source_name for ctrl, _ in join_controllers])
-        cache_key = data_pulse_cache.make_query_key(
+        cache_key = DataPulseCache.make_query_key(
             cache_tables,
             "select",
             {
@@ -446,8 +443,8 @@ class SelectManager:
                 "update": self._do_update,
             }
         )
-        can_use_cache = data_pulse_cache.enabled and not getattr(self._controller, "isUpdate", False)
-        rows = data_pulse_cache.get(self._controller.source_name, cache_key) if can_use_cache else None
+        can_use_cache = DataPulseCache.enabled and not getattr(self._controller, "isUpdate", False)
+        rows = DataPulseCache.get(self._controller.source_name, cache_key) if can_use_cache else None
 
         if rows is None:
             rows = self._execute_select_query(query, tuple(values))
@@ -464,7 +461,7 @@ class SelectManager:
                     raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
 
             if can_use_cache:
-                data_pulse_cache.set(self._controller.source_name, cache_key, [tuple(row) for row in rows])
+                DataPulseCache.set(self._controller.source_name, cache_key, [tuple(row) for row in rows])
 
         if has_aggregates or self._group_by or self._group_by is not None:
             results = self._process_aggregate_results(rows, columns, table_columns)

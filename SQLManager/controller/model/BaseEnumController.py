@@ -1,5 +1,5 @@
-from enum   import Enum as _Enum, EnumMeta as _EnumMeta
-from .operator import OperationManager
+from enum       import Enum as _Enum, EnumMeta as _EnumMeta
+from ..operator import OperationManager
 
 class BaseEnum_Utils:
     '''Classe utilitária para Enums e Controllers'''

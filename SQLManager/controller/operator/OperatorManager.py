@@ -1,8 +1,7 @@
 from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
-    from ..TableController import FieldCondition
-
+    from ..managers import FieldCondition
 
 class OperationManager:
     '''
@@ -12,7 +11,7 @@ class OperationManager:
     
     def _get_field_condition(self):
         '''Import lazy de FieldCondition para evitar importação circular'''
-        from ..TableController import FieldCondition
+        from ..managers import FieldCondition
         return FieldCondition
     
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
@@ -97,8 +96,7 @@ class OperationManager:
     
     def _extract_value(self, other):
         '''Extrai o valor de EDT, Enum ou retorna o valor direto'''
-        from ..EDTController import EDTController
-        from ..BaseEnumController import BaseEnumController, Enum
+        from ..model import EDTController, BaseEnumController, Enum
         
         if isinstance(other, EDTController):
             return other.value
@@ -109,8 +107,7 @@ class OperationManager:
     ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 26/02/2026 '''
     def _extract_field_info(self, other):
         '''Extrai informações do campo se other for um EDT/Enum, None caso contrário'''
-        from ..EDTController import EDTController
-        from ..BaseEnumController import BaseEnumController, Enum
+        from ..model import EDTController, BaseEnumController, Enum        
         
         if isinstance(other, (EDTController, BaseEnumController, Enum)):
             field_name = other._get_field_name() if hasattr(other, '_get_field_name') else getattr(other, '_field_name', None)

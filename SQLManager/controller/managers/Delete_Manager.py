@@ -3,11 +3,11 @@
 from functools import wraps
 from typing    import Optional, Union, Callable, TYPE_CHECKING
 
-from ._conditions_Managers import FieldCondition, BinaryExpression
-from ..DataPulseCache      import data_pulse_cache
+from ..managers import FieldCondition, BinaryExpression
+from ..Cache    import DataPulseCache
 
 if TYPE_CHECKING:
-    from ..TableController import TableController
+    from ..model import TableController
 
 class AutoExecuteDeleteWrapper:
     '''Wrapper para DeleteRecordsetManager que auto-executa'''
@@ -79,7 +79,7 @@ class DeleteRecordsetManager:
                 affected_rows       = cursor.rowcount if hasattr(cursor, 'rowcount') else cursor if isinstance(cursor, int) else 0
                 self._result_cache  = affected_rows
                 if affected_rows:
-                    data_pulse_cache.invalidate_controller(self._controller)
+                    DataPulseCache.invalidate_controller(self._controller)
                 return affected_rows    
         except Exception as error:            
             raise Exception(f"Erro ao deletar registros em massa: {error}")
@@ -120,7 +120,7 @@ class DeleteManager:
         try:
             with controller.db.transaction() as trs:            
                 trs.executeCommand(query, (controller._get_field_instance('RECID').value,))
-            data_pulse_cache.invalidate_controller(controller)
+            DataPulseCache.invalidate_controller(controller)
         except Exception as error:
             raise Exception(f"Erro ao excluir registro: {error}")
         

@@ -1,18 +1,12 @@
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #1 / made by: Nicolas Santos / created: 23/02/2026 '''
 from typing              import Any, List, Dict, Optional, Union
 
-from ..connection        import database_connection as data, Transaction
+from ...connection       import database_connection as data, Transaction
 from .EDTController      import EDTController
 from .BaseEnumController import BaseEnumController
-from .managers._conditions_Managers import FieldCondition, BinaryExpression
-
-''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
-from .managers           import SelectManager, InsertManager, UpdateManager, DeleteManager, InsertRecordsetWrapper, DeleteRecordsetManager, RelationManager
-''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''
-
-from .SystemController   import SystemController
-
-from .dialect            import ControllerBase
+from ..managers          import *
+from ..SystemController  import SystemController
+from ..dialect           import ControllerBase
 from abc                 import ABCMeta
 
 # Registry global de campos por classe (para acesso via ClassName.FIELD)

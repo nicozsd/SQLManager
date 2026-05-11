@@ -1,12 +1,12 @@
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 23/02/2026 '''
 from typing              import Any, List, Dict, Optional, Union
 
-from ..connection        import database_connection as data, Transaction
+from ...connection       import database_connection as data, Transaction
 from .EDTController      import EDTController
 from .BaseEnumController import BaseEnumController
 
-from .managers           import *
-from .dialect            import ControllerBase
+from ..managers           import *
+from ..dialect            import ControllerBase
 
 class ViewController(ControllerBase):
     '''

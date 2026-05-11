@@ -2,14 +2,12 @@
 
 import inspect
 import types
-from typing    import TYPE_CHECKING, Optional, Union, List, Dict, Any
-from ..EDTController import EDTController
-from ..BaseEnumController import BaseEnumController
-from ._conditions_Managers import FieldCondition, BinaryExpression
+from typing import TYPE_CHECKING, Optional, Union, List, Dict, Any
 
-if TYPE_CHECKING:
-    from ...connection import database_connection as db
-    from ..TableController import TableController
+from ..managers import FieldCondition, BinaryExpression
+
+if TYPE_CHECKING:    
+    from ..model import EDTController, BaseEnumController, TableController
 
 class RelationManager:
     '''
@@ -119,7 +117,7 @@ class RelationManager:
         '''
         Resolve uma classe de TableController a partir de um módulo, se necessário.
         '''
-        from ..TableController import TableController
+        from ..model import TableController
 
         # Tenta usar __all__ se disponível
         if hasattr(module, '__all__'):

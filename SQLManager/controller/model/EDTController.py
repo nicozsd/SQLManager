@@ -1,8 +1,8 @@
 import re
 from typing             import Any, Optional, Dict, Union, TypeAlias
-from .SystemController  import SystemController
-from ..CoreConfig       import CoreConfig
-from .operator import OperationManager
+from ..SystemController import SystemController
+from ...CoreConfig      import CoreConfig
+from ..operator         import OperationManager
 
 class EDT_Utils:
     '''Classe utilitária para EDTs'''
