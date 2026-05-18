@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import base64
 from decimal import Decimal
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timezone
 
 from typing import Any, Dict, Optional, Set
 
@@ -24,13 +25,43 @@ except ImportError:
 class _JSONEncoder(json.JSONEncoder):
     """Codifica tipos especiais (Decimal, datetime, etc) para JSON."""
     def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        if isinstance(obj, (datetime, date, time)):
-            return obj.isoformat()
+        prepared = prepare_json_data(obj)
+        if prepared is not obj:
+            return prepared
         if hasattr(obj, '__dict__'):
-            return obj.__dict__
+            return prepare_json_data(obj.__dict__)
         return super().default(obj)
+
+
+def prepare_json_data(obj: Any) -> Any:
+    """Converte recursivamente tipos especiais para valores serializaveis em JSON."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+
+    if isinstance(obj, datetime):
+        if obj.tzinfo is None:
+            obj = obj.replace(tzinfo=timezone.utc)
+        return obj.isoformat()
+
+    if isinstance(obj, (date, time)):
+        return obj.isoformat()
+
+    if isinstance(obj, (bytes, bytearray, memoryview)):
+        return base64.b64encode(bytes(obj)).decode("ascii")
+
+    if isinstance(obj, dict):
+        return {key: prepare_json_data(value) for key, value in obj.items()}
+
+    if isinstance(obj, list):
+        return [prepare_json_data(value) for value in obj]
+
+    if isinstance(obj, tuple):
+        return tuple(prepare_json_data(value) for value in obj)
+
+    if isinstance(obj, set):
+        return [prepare_json_data(value) for value in obj]
+
+    return obj
 
 
 class WebSocketManager:

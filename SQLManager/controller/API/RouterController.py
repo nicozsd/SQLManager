@@ -15,7 +15,7 @@ from ...connection import database_connection
 
 from ..model             import TableController, ViewController
 from ..SystemController  import SystemController
-from .WebSocketManager   import WebSocketManager
+from .WebSocketManager   import WebSocketManager, prepare_json_data
 from ..Cache             import DataPulseCache
 
 try:
@@ -361,7 +361,7 @@ class AutoRouter:
 
     def _build_framework_response(self, result: Dict[str, Any], adapter: str):
         """Converte o dict padrão do AutoRouter para a resposta esperada pelo framework."""
-        payload = dict(result)
+        payload = prepare_json_data(dict(result))
         status = payload.pop("status", 200)
 
         if adapter == "flask":
@@ -1930,15 +1930,8 @@ class AutoRouter:
             current_depth: Profundidade atual de recursão
             max_depth: Profundidade máxima de recursão (evita loops infinitos)
         """
-        import datetime
         def convert_value(val):
-            if isinstance(val, datetime.datetime):
-                return val.isoformat()
-            if isinstance(val, datetime.date):
-                return val.isoformat()
-            if isinstance(val, datetime.time):
-                return val.isoformat()
-            return val
+            return prepare_json_data(val)
 
         if isinstance(record_obj, dict):
             record_dict = {k: convert_value(v) for k, v in record_obj.items()}
@@ -2067,16 +2060,8 @@ class AutoRouter:
     
     def _serialize_simple(self, record_obj, field_map: Dict[str, str]) -> Dict:
         """Serializa um record simples sem processar relations recursivamente"""
-        import datetime
-        
         def convert_value(val):
-            if isinstance(val, datetime.datetime):
-                return val.isoformat()
-            if isinstance(val, datetime.date):
-                return val.isoformat()
-            if isinstance(val, datetime.time):
-                return val.isoformat()
-            return val
+            return prepare_json_data(val)
         
         if isinstance(record_obj, dict):
             return {k: convert_value(v) for k, v in record_obj.items()}
@@ -2105,16 +2090,8 @@ class AutoRouter:
             current_depth: Profundidade atual
             max_depth: Profundidade máxima
         """
-        import datetime
-        
         def convert_value(val):
-            if isinstance(val, datetime.datetime):
-                return val.isoformat()
-            if isinstance(val, datetime.date):
-                return val.isoformat()
-            if isinstance(val, datetime.time):
-                return val.isoformat()
-            return val
+            return prepare_json_data(val)
         
         # Serializa campos básicos
         if isinstance(record_obj, dict):

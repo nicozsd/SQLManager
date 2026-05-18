@@ -152,15 +152,34 @@ class RelationManager:
         Args:
             records: Lista de registros da relation
         '''
-        self.records = records
+        normalized_records = []
+        seen_keys = set()
+
+        for record in records or []:
+            if isinstance(record, dict):
+                if not any(value is not None for value in record.values()):
+                    continue
+                record_key = record.get('RECID')
+                if record_key is None:
+                    record_key = tuple(sorted(record.items()))
+            else:
+                record_key = id(record)
+
+            if record_key in seen_keys:
+                continue
+
+            seen_keys.add(record_key)
+            normalized_records.append(record)
+
+        self.records = normalized_records
         
         # Popula a instância da tabela relacionada
         table = self.get_instance()
-        table.records = records
+        table.records = normalized_records
         
         # Define o primeiro record como atual se existir
-        if records:
-            table.set_current(records[0])
+        if normalized_records:
+            table.set_current(normalized_records[0])
     
     def _extract_field_name(self, field: Union[str, EDTController, BaseEnumController]) -> str:
         '''Extrai o nome do campo de um EDT/Enum ou string'''
