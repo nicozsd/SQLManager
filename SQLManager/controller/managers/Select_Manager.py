@@ -2,17 +2,15 @@
 import weakref
 import sys
 
-from typing import Any, List, Dict, Optional, Union, TYPE_CHECKING
+from typing        import Any, List, Dict, Optional, Union, TYPE_CHECKING
+from ...CoreConfig import CoreConfig
 
-from ..BaseEnumController  import BaseEnumController
-from ..EDTController       import EDTController
-from ..DataPulseCache      import data_pulse_cache
-
+from ..model    import BaseEnumController, EDTController
+from ..Cache    import DataPulseCache
 from ._conditions_Managers import FieldCondition, BinaryExpression
 
-if TYPE_CHECKING:
-    from ..TableController import TableController
-    from ..ViewController  import ViewController
+if TYPE_CHECKING:    
+    from ..model import ViewController, TableController
 
 class AutoExecuteWrapper:
     '''Wrapper que delega métodos para SelectManager mas auto-executa quando não há mais encadeamento'''
@@ -130,6 +128,32 @@ class SelectManager:
         ''' [END CODE] Project: SQLManager Version 4.0 / issue: #5 / made by: Nicolas Santos / created: 09/03/2026 '''        
 
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #4 / made by: Nicolas Santos / created: 25/02/2026 '''
+
+    def _execute_select_query(self, query: str, values: tuple):
+        if CoreConfig.select_use_transaction():
+            with self._controller.db.transaction() as trs:
+                return self._run_query_on_connection(trs, query, values)
+
+        return self._run_query_on_connection(self._controller.db, query, values)
+
+    @staticmethod
+    def _run_query_on_connection(conn, query: str, values: tuple):
+        if hasattr(conn, 'doQuery'):
+            return conn.doQuery(query, values)
+        if hasattr(conn, 'execute'):
+            result = conn.execute(query, values)
+            return result.fetchall() if hasattr(result, 'fetchall') else result
+        if hasattr(conn, 'executeCommand'):
+            cursor = conn.executeCommand(query, values)
+            return cursor.fetchall() if cursor else []
+        raise Exception("Objeto de conexao nao possui metodo compativel para SELECT")
+
+    @staticmethod
+    def _default_order_column(table_columns):
+        for col in table_columns:
+            if str(col[0]).upper() == 'RECID':
+                return col[0]
+        return table_columns[0][0] if table_columns else None
 
     @staticmethod
     def _extract_field_name(field: Union[str, EDTController, 'BaseEnumController']) -> str:
@@ -252,6 +276,13 @@ class SelectManager:
 
         if not validate['valid']:
             raise Exception(validate['error'])
+
+        cache_config = CoreConfig.get_cache_config()
+        DataPulseCache.configure(
+            enabled=cache_config.get('enabled'),
+            default_ttl=cache_config.get('ttl'),
+            max_entries=cache_config.get('max_entries')
+        )
         
         columns = self._columns or ['*']
         limit   = self._limit or 100
@@ -392,7 +423,9 @@ class SelectManager:
             query += f" ORDER BY {main_alias}.{self._order_by}"
         elif self._limit is not None and self._limit > 0:
             # Adiciona ORDER BY automático para permitir paginação
-            query += f" ORDER BY {main_alias}.RECID"
+            default_order = self._default_order_column(table_columns)
+            if default_order:
+                query += f" ORDER BY {main_alias}.{default_order}"
         
         # Aplica LIMIT/OFFSET se definido (SQL Server: OFFSET/FETCH)
         if self._limit is not None and self._limit > 0:
@@ -400,7 +433,7 @@ class SelectManager:
         
         cache_tables = [self._controller.source_name]
         cache_tables.extend([ctrl.source_name for ctrl, _ in join_controllers])
-        cache_key = data_pulse_cache.make_query_key(
+        cache_key = DataPulseCache.make_query_key(
             cache_tables,
             "select",
             {
@@ -410,11 +443,12 @@ class SelectManager:
                 "update": self._do_update,
             }
         )
-        can_use_cache = data_pulse_cache.enabled and not getattr(self._controller, "isUpdate", False)
-        rows = data_pulse_cache.get(self._controller.source_name, cache_key) if can_use_cache else None
+        can_use_cache = DataPulseCache.enabled and not getattr(self._controller, "isUpdate", False)
+        rows = DataPulseCache.get(self._controller.source_name, cache_key) if can_use_cache else None
 
         if rows is None:
-            with self._controller.db.transaction() as trs:
+            rows = self._execute_select_query(query, tuple(values))
+            if False:
                 if hasattr(trs, 'doQuery'):
                     rows = trs.doQuery(query, tuple(values))
                 elif hasattr(trs, 'execute'):
@@ -427,7 +461,7 @@ class SelectManager:
                     raise Exception(f"Objeto de conexão não possui método compatível (doQuery, execute ou executeCommand)")
 
             if can_use_cache:
-                data_pulse_cache.set(self._controller.source_name, cache_key, [tuple(row) for row in rows])
+                DataPulseCache.set(self._controller.source_name, cache_key, [tuple(row) for row in rows])
 
         if has_aggregates or self._group_by or self._group_by is not None:
             results = self._process_aggregate_results(rows, columns, table_columns)
@@ -562,12 +596,14 @@ class SelectManager:
                 main_data[col[0]] = row[idx]
                 idx += 1
             
-            # Deduplicação para relations (baseado em RECID)
+            # Deduplicacao para relations usando RECID ou a linha completa
             if self._include_relations:
-                main_recid = main_data.get('RECID')
-                if main_recid is not None:
-                    if main_recid not in seen_main_recids:
-                        seen_main_recids.add(main_recid)
+                main_key = main_data.get('RECID')
+                if main_key is None:
+                    main_key = tuple(main_data.items())
+                if main_key is not None:
+                    if main_key not in seen_main_recids:
+                        seen_main_recids.add(main_key)
                         deduplicated_main_records.append(main_data)
             
             row_data = [main_data]  

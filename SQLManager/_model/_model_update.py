@@ -32,6 +32,12 @@ class ModelUpdater(ModelUpdaterBase):
     '''Atualização automática de modelos'''
 
     @staticmethod
+    def _normalize_selection(selected_names):
+        if selected_names is None:
+            return None
+        return {str(name).lower() for name in selected_names}
+
+    @staticmethod
     def _get_values(obj):
         '''Retorna valores de dict ou lista de forma compatível'''
         if isinstance(obj, dict):
@@ -93,6 +99,8 @@ class ModelUpdater(ModelUpdaterBase):
         '''Gera __init__.py da pasta src/model/'''
         model_init_file = self.model_path / "__init__.py"
         content = (
+            "import sys\n\n"
+            "sys.modules.setdefault(\"model\", sys.modules[__name__])\n\n"
             "from . import EDTs   as EDTPack\n"
             "from . import enum   as EnumPack\n"
             "from . import views  as ViewPack\n"
@@ -162,11 +170,14 @@ class ModelUpdater(ModelUpdaterBase):
         if hasattr(self, 'db'):
             self.db.disconnect()    
     
-    def run(self):
+    def run(self, selected_tables=None, selected_views=None, confirm_callback=None):
         '''Executa atualização completa'''
         print("="*40)
         print("MODEL UPDATE")
         print("="*40)
+
+        selected_tables = self._normalize_selection(selected_tables)
+        selected_views = self._normalize_selection(selected_views)
 
         existing_tables = list(self.tables_path.glob("*.py"))
         existing_tables = [f for f in existing_tables if not f.name.startswith("_")]
@@ -177,31 +188,13 @@ class ModelUpdater(ModelUpdaterBase):
             print(f"Faça {SystemController().custom_text('BACKUP', 'yellow', is_bold=True)} de src/model/tables antes de continuar.")
             
             ui_resposta = None
-            try:
-                import tkinter as tk
-                from tkinter import messagebox
-                
-                root = tk._default_root
-                is_temp_root = False
-                if root is None:
-                    root = tk.Tk()
-                    root.withdraw()
-                    root.attributes('-topmost', True)
-                    is_temp_root = True
-                    
-                ui_resposta = messagebox.askyesno(
-                    "Aviso de Segurança - SQLManager",
+            if confirm_callback is not None:
+                ui_resposta = bool(confirm_callback(
                     "ATENÇÃO!\n\n"
                     "Tabelas não existentes no banco de dados serão REMOVIDAS.\n"
                     "Faça BACKUP da pasta 'src/model/tables' antes de continuar.\n\n"
-                    "Deseja continuar com a atualização?",
-                    icon='warning'
-                )
-                
-                if is_temp_root:
-                    root.destroy()
-            except Exception:
-                pass # Falha ao abrir UI, segue para o fallback de terminal
+                    "Deseja continuar com a atualização?"
+                ))
                 
             if ui_resposta is None:
                 print(f"\nContinuar? ({SystemController().custom_text('y', 'green')}/{SystemController().custom_text('n', 'red')})")
@@ -248,7 +241,7 @@ class ModelUpdater(ModelUpdaterBase):
             Table_Manager._scan_existing_tables(self, _ShowTables=True)
 
             utils.stepInfo("03.2", "Atualizando Tables")
-            Table_Manager._update_tables(self)
+            Table_Manager._update_tables(self, selected_tables=selected_tables)
 
             utils.stepInfo("03.3", "Atualizando model de Tables")
             Table_Manager._scan_existing_tables(self, _ShowTables=True)
@@ -258,7 +251,7 @@ class ModelUpdater(ModelUpdaterBase):
             View_Manager._scan_existing_views(self, _ShowViews=True)
 
             utils.stepInfo("04.2", "Atualizando Views")
-            View_Manager._update_views(self)
+            View_Manager._update_views(self, selected_views=selected_views)
 
             utils.stepInfo("04.3", "Atualizando model de Views")
             View_Manager._update_views_init(self)

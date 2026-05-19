@@ -8,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, os.path.dirname(parent_dir))
 
-from SQLManager.controller.RouterController import AutoRouter
+from SQLManager.controller.API.RouterController import AutoRouter
 
 from SQLManager.CoreConfig import CoreConfig
 from SQLManager.connection import database_connection

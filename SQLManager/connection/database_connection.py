@@ -202,7 +202,7 @@ class database_connection (_TTS_Manager, _Consult_Manager):
             user     = _User     or config.get('user')
             password = _Password or config.get('password')
             driver   = config.get('driver')
-            self.db_type = config.get('DB_TYPE') or config.get('db_type') or os.getenv('DB_TYPE', 'sqlserver')
+            self.db_type = config.get('type') or os.getenv('DB_TYPE', 'sqlserver')
         else:
             server   = _Server   or os.getenv('DB_SERVER')
             database = _Database or os.getenv('DB_DATABASE')

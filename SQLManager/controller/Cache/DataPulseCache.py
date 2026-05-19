@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import threading
 import time
 
@@ -25,13 +26,32 @@ class DataPulseCache:
     """
 
     def __init__(self, enabled: bool = True, default_ttl: int = 45, max_entries: int = 2000):
-        self.enabled = enabled
-        self.default_ttl = default_ttl
-        self.max_entries = max_entries
+        env_enabled = os.getenv("SQLMANAGER_CACHE_ENABLED")
+        env_ttl = os.getenv("SQLMANAGER_CACHE_TTL")
+        env_max_entries = os.getenv("SQLMANAGER_CACHE_MAX_ENTRIES")
+
+        self.enabled = self._parse_bool(env_enabled, enabled)
+        self.default_ttl = self._parse_int(env_ttl, default_ttl)
+        self.max_entries = self._parse_int(env_max_entries, max_entries)
         self._lock = threading.RLock()
         self._tables: Dict[str, Dict[str, _DataPulseEntry]] = {}
         self._versions: Dict[str, int] = {}
         self._stats = {"hits": 0, "misses": 0, "sets": 0, "invalidations": 0}
+
+    @staticmethod
+    def _parse_bool(value: Optional[str], default: bool) -> bool:
+        if value is None:
+            return default
+        return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
+    @staticmethod
+    def _parse_int(value: Optional[str], default: int) -> int:
+        if value is None:
+            return default
+        try:
+            return max(int(value), 1)
+        except (TypeError, ValueError):
+            return default
 
     def configure(self, enabled: Optional[bool] = None, default_ttl: Optional[int] = None, max_entries: Optional[int] = None):
         with self._lock:

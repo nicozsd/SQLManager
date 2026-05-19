@@ -8,18 +8,15 @@ import inspect
 import json
 import os
 import re
-import time
 import traceback
-from unittest import case
 
-from ..CoreConfig import CoreConfig
-from ..connection import database_connection
+from ...CoreConfig import CoreConfig
+from ...connection import database_connection
 
-from .TableController   import TableController
-from .ViewController    import ViewController
-from .SystemController  import SystemController
-from .WebSocketManager  import WebSocketManager
-from .DataPulseCache    import data_pulse_cache
+from ..model             import TableController, ViewController
+from ..SystemController  import SystemController
+from .WebSocketManager   import WebSocketManager, prepare_json_data
+from ..Cache             import DataPulseCache
 
 try:
     _flask_module = importlib.import_module("flask")
@@ -81,8 +78,8 @@ class AutoRouter:
         self._query_cache:     Dict[str, tuple]          = {}  # Cache de queries: {cache_key: (timestamp, data)}
         self._cache_ttl = 30  # TTL do cache em segundos
 
-        cache_config = self.config.get('data_pulse_cache', {})
-        data_pulse_cache.configure(
+        cache_config = self.config.get('data_pulse_cache') or self.config.get('DataPulseCache', {})
+        DataPulseCache.configure(
             enabled=cache_config.get('enabled', True),
             default_ttl=cache_config.get('ttl', 45),
             max_entries=cache_config.get('max_entries', 2000)
@@ -364,7 +361,7 @@ class AutoRouter:
 
     def _build_framework_response(self, result: Dict[str, Any], adapter: str):
         """Converte o dict padrão do AutoRouter para a resposta esperada pelo framework."""
-        payload = dict(result)
+        payload = prepare_json_data(dict(result))
         status = payload.pop("status", 200)
 
         if adapter == "flask":
@@ -497,11 +494,14 @@ class AutoRouter:
                 "methods": ["GET"],
                 "endpoint": "multi_table_get",
                 "handler": self._make_multi_route_handler(adapter),
+                "tag": "Model",
             }
         ]
         route_definitions.extend(self._get_lookup_route_definitions(suffix, adapter))
 
         if not tables:
+            route_definitions.extend(self._get_enum_route_definitions(suffix, adapter))
+            route_definitions.extend(self._get_edt_route_definitions(suffix, adapter))
             return route_definitions
 
         for table_name in tables:
@@ -511,6 +511,10 @@ class AutoRouter:
             allowed_methods = ["GET"] if is_view else table_config.get('allowed_methods', ["GET", "POST", "PATCH", "DELETE"])
 
             route_definitions.extend(self._get_table_route_definitions(table_name, allowed_methods, suffix, adapter))
+
+        # Adiciona rotas para Enums e EDTs
+        route_definitions.extend(self._get_enum_route_definitions(suffix, adapter))
+        route_definitions.extend(self._get_edt_route_definitions(suffix, adapter))
 
         return route_definitions
 
@@ -527,6 +531,7 @@ class AutoRouter:
                     "methods": list_methods,
                     "endpoint": f"{table_name}_list",
                     "handler": self._make_table_list_handler(table_name, adapter),
+                    "tag": "Model - Tabelas",
                 }
             )
 
@@ -538,6 +543,7 @@ class AutoRouter:
                     "methods": detail_methods,
                     "endpoint": f"{table_name}_detail",
                     "handler": self._make_table_detail_handler(table_name, adapter),
+                    "tag": "Model - Tabelas",
                 }
             )
 
@@ -559,6 +565,7 @@ class AutoRouter:
                     "methods": ["GET"],
                     "endpoint": f"{route_name.replace('-', '_')}_lookup",
                     "handler": self._make_lookup_handler(route_name, adapter),
+                    "tag": "Model - Tabelas",
                 }
             )
 
@@ -593,6 +600,315 @@ class AutoRouter:
                 configs[str(route_name).strip("/")] = cfg
 
         return configs
+
+    def _discover_enums(self) -> Dict[str, Any]:
+        """Descobre Enums disponíveis no projeto."""
+        enums_dict = {}
+        possible_modules = [
+            "model.enums",
+            "src.model.enums",
+            "model.EnumPack",
+            "src.model.EnumPack",
+        ]
+        
+        for mod_name in possible_modules:
+            try:
+                module = importlib.import_module(mod_name)
+                if hasattr(module, '__all__'):
+                    for enum_name in module.__all__:
+                        if hasattr(module, enum_name):
+                            enum_cls = getattr(module, enum_name)
+                            enums_dict[enum_name] = enum_cls
+                break
+            except ImportError:
+                continue
+        
+        return enums_dict
+
+    def _discover_edts(self) -> Dict[str, Any]:
+        """Descobre EDTs disponíveis no projeto."""
+        edts_dict = {}
+        possible_modules = [
+            "model.edts",
+            "src.model.edts",
+            "model.EDTPack",
+            "src.model.EDTPack",
+        ]
+        
+        for mod_name in possible_modules:
+            try:
+                module = importlib.import_module(mod_name)
+                if hasattr(module, '__all__'):
+                    for edt_name in module.__all__:
+                        if hasattr(module, edt_name):
+                            edt_cls = getattr(module, edt_name)
+                            edts_dict[edt_name] = edt_cls
+                break
+            except ImportError:
+                continue
+        
+        return edts_dict
+
+    def _get_enum_route_definitions(self, suffix: str, adapter: str) -> List[Dict[str, Any]]:
+        """Gera definições de rotas para Enums."""
+        route_definitions: List[Dict[str, Any]] = []
+        enums_dict = self._discover_enums()
+        
+        for enum_name, enum_cls in enums_dict.items():
+            enum_lower = enum_name.lower()
+            base_route = self._build_route_base(suffix, f"enums/{enum_lower}")
+            
+            # Rota GET /{suffix}/enums/{enum_name} - retorna map completo
+            route_definitions.append({
+                "path": base_route,
+                "methods": ["GET"],
+                "endpoint": f"enum_{enum_lower}_map",
+                "handler": self._make_enum_handler(enum_name, "map", adapter),
+                "tag": "Model - Enums",
+            })
+            
+            # Rota GET /{suffix}/enums/{enum_name}/keys
+            route_definitions.append({
+                "path": f"{base_route}/keys",
+                "methods": ["GET"],
+                "endpoint": f"enum_{enum_lower}_keys",
+                "handler": self._make_enum_handler(enum_name, "keys", adapter),
+                "tag": "Model - Enums",
+            })
+            
+            # Rota GET /{suffix}/enums/{enum_name}/values
+            route_definitions.append({
+                "path": f"{base_route}/values",
+                "methods": ["GET"],
+                "endpoint": f"enum_{enum_lower}_values",
+                "handler": self._make_enum_handler(enum_name, "values", adapter),
+                "tag": "Model - Enums",
+            })
+            
+            # Rota GET /{suffix}/enums/{enum_name}/labels
+            route_definitions.append({
+                "path": f"{base_route}/labels",
+                "methods": ["GET"],
+                "endpoint": f"enum_{enum_lower}_labels",
+                "handler": self._make_enum_handler(enum_name, "labels", adapter),
+                "tag": "Model - Enums",
+            })
+        
+        return route_definitions
+
+    def _get_edt_route_definitions(self, suffix: str, adapter: str) -> List[Dict[str, Any]]:
+        """Gera definições de rotas para EDTs."""
+        route_definitions: List[Dict[str, Any]] = []
+        edts_dict = self._discover_edts()
+        
+        for edt_name, edt_cls in edts_dict.items():
+            edt_lower = edt_name.lower()
+            base_route = self._build_route_base(suffix, f"edts/{edt_lower}")
+            
+            # Rota GET /{suffix}/edts/{edt_name} - informações do EDT
+            route_definitions.append({
+                "path": base_route,
+                "methods": ["GET"],
+                "endpoint": f"edt_{edt_lower}_info",
+                "handler": self._make_edt_handler(edt_name, "info", adapter),
+                "tag": "Model - EDTs",
+            })
+            
+            # Rota GET /{suffix}/edts/{edt_name}/validate?value=... - valida um valor
+            route_definitions.append({
+                "path": f"{base_route}/validate",
+                "methods": ["GET"],
+                "endpoint": f"edt_{edt_lower}_validate",
+                "handler": self._make_edt_handler(edt_name, "validate", adapter),
+                "tag": "Model - EDTs",
+            })
+            
+            # Rota GET /{suffix}/edts/{edt_name}/test?value=... - testa conversão de tipos
+            route_definitions.append({
+                "path": f"{base_route}/test",
+                "methods": ["GET"],
+                "endpoint": f"edt_{edt_lower}_test",
+                "handler": self._make_edt_handler(edt_name, "test", adapter),
+                "tag": "Model - EDTs",
+            })
+        
+        return route_definitions
+
+    def _make_enum_handler(self, enum_name: str, operation: str, adapter: str):
+        """Cria handler para rotas de Enum."""
+        if adapter == "flask":
+            def enum_handler():
+                result = self._handle_enum_request(enum_name, operation, request.args)
+                return self._build_framework_response(result, adapter)
+            return enum_handler
+
+        async def enum_handler(request_obj: StarletteRequest):
+            params = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            result = self._handle_enum_request(enum_name, operation, params)
+            return self._build_framework_response(result, adapter)
+
+        return enum_handler
+
+    def _make_edt_handler(self, edt_name: str, operation: str, adapter: str):
+        """Cria handler para rotas de EDT."""
+        if adapter == "flask":
+            def edt_handler():
+                result = self._handle_edt_request(edt_name, operation, request.args)
+                return self._build_framework_response(result, adapter)
+            return edt_handler
+
+        async def edt_handler(request_obj: StarletteRequest):
+            params = self._normalize_query_params(getattr(request_obj, "query_params", {}))
+            result = self._handle_edt_request(edt_name, operation, params)
+            return self._build_framework_response(result, adapter)
+
+        return edt_handler
+
+    def _handle_enum_request(self, enum_name: str, operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Processa requisições de Enum."""
+        try:
+            enums_dict = self._discover_enums()
+            if enum_name not in enums_dict:
+                return {
+                    "status": 404,
+                    "error": f"Enum '{enum_name}' não encontrado"
+                }
+            
+            enum_cls = enums_dict[enum_name]
+            enum_controller = enum_cls()
+            
+            if operation == "map":
+                return {
+                    "status": 200,
+                    "data": enum_controller.get_map(),
+                    "meta": {"enum": enum_name, "operation": "map"}
+                }
+            elif operation == "keys":
+                return {
+                    "status": 200,
+                    "data": enum_controller.get_keys(),
+                    "meta": {"enum": enum_name, "operation": "keys"}
+                }
+            elif operation == "values":
+                return {
+                    "status": 200,
+                    "data": enum_controller.get_values(),
+                    "meta": {"enum": enum_name, "operation": "values"}
+                }
+            elif operation == "labels":
+                return {
+                    "status": 200,
+                    "data": enum_controller.get_labels(),
+                    "meta": {"enum": enum_name, "operation": "labels"}
+                }
+            else:
+                return {
+                    "status": 400,
+                    "error": f"Operação '{operation}' não suportada para Enum"
+                }
+        except Exception as e:
+            return {
+                "status": 500,
+                "error": f"Erro ao processar Enum: {str(e)}"
+            }
+
+    def _handle_edt_request(self, edt_name: str, operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Processa requisições de EDT."""
+        try:
+            edts_dict = self._discover_edts()
+            if edt_name not in edts_dict:
+                return {
+                    "status": 404,
+                    "error": f"EDT '{edt_name}' não encontrado"
+                }
+            
+            edt_cls = edts_dict[edt_name]
+            
+            if operation == "info":
+                # Retorna informações sobre o EDT
+                edt_instance = edt_cls()
+                return {
+                    "status": 200,
+                    "data": {
+                        "name": edt_name,
+                        "regex_type": edt_instance.regex.regexId if hasattr(edt_instance.regex, 'regexId') else "unknown",
+                        "type_id": str(edt_instance.type_id) if edt_instance.type_id else None,
+                        "default_value": str(edt_instance.value) if edt_instance.value else None,
+                    },
+                    "meta": {"edt": edt_name, "operation": "info"}
+                }
+            
+            elif operation == "validate":
+                # Valida um valor contra o EDT
+                value = params.get("value")
+                if value is None:
+                    return {
+                        "status": 400,
+                        "error": "Parâmetro 'value' é obrigatório"
+                    }
+                
+                try:
+                    edt_instance = edt_cls(value)
+                    return {
+                        "status": 200,
+                        "data": {
+                            "valid": True,
+                            "value": str(edt_instance.value),
+                            "type": str(edt_instance.type_id) if edt_instance.type_id else None,
+                        },
+                        "meta": {"edt": edt_name, "operation": "validate"}
+                    }
+                except ValueError as ve:
+                    return {
+                        "status": 400,
+                        "data": {
+                            "valid": False,
+                            "error": str(ve),
+                        },
+                        "meta": {"edt": edt_name, "operation": "validate"}
+                    }
+            
+            elif operation == "test":
+                # Testa conversões de tipo
+                value = params.get("value")
+                if value is None:
+                    return {
+                        "status": 400,
+                        "error": "Parâmetro 'value' é obrigatório"
+                    }
+                
+                try:
+                    edt_instance = edt_cls(value)
+                    return {
+                        "status": 200,
+                        "data": {
+                            "original": str(value),
+                            "as_string": str(edt_instance),
+                            "as_int": int(edt_instance),
+                            "as_float": float(edt_instance),
+                            "as_bool": bool(edt_instance),
+                        },
+                        "meta": {"edt": edt_name, "operation": "test"}
+                    }
+                except (ValueError, TypeError) as e:
+                    return {
+                        "status": 400,
+                        "data": {
+                            "error": f"Não foi possível converter: {str(e)}",
+                        },
+                        "meta": {"edt": edt_name, "operation": "test"}
+                    }
+            
+            else:
+                return {
+                    "status": 400,
+                    "error": f"Operação '{operation}' não suportada para EDT"
+                }
+        except Exception as e:
+            return {
+                "status": 500,
+                "error": f"Erro ao processar EDT: {str(e)}"
+            }
 
     def _make_lookup_handler(self, route_name: str, adapter: str):
         if adapter == "flask":
@@ -696,7 +1012,7 @@ class AutoRouter:
 
             table_clause = self._lookup_table_clause(table_name)
             base_query = f"SELECT {', '.join(columns)} FROM {table_clause}{where_clause} ORDER BY {order_by}"
-            cache_key = data_pulse_cache.make_query_key(
+            cache_key = DataPulseCache.make_query_key(
                 [table_name],
                 "lookup",
                 {
@@ -709,7 +1025,7 @@ class AutoRouter:
                 }
             )
 
-            cached_response = data_pulse_cache.get(table_name, cache_key)
+            cached_response = DataPulseCache.get(table_name, cache_key)
             if cached_response is not None:
                 return cached_response
 
@@ -749,7 +1065,7 @@ class AutoRouter:
             if total is not None:
                 response["total"] = total
 
-            data_pulse_cache.set(table_name, cache_key, response, ttl=lookup_config.get("ttl"))
+            DataPulseCache.set(table_name, cache_key, response, ttl=lookup_config.get("ttl"))
             return response
         except Exception as e:
             return {"status": 500, "error": str(e)}
@@ -760,22 +1076,35 @@ class AutoRouter:
         methods = route_definition["methods"]
         endpoint = route_definition["endpoint"]
         handler = route_definition["handler"]
+        tag = route_definition.get("tag", "Model")
         handler.__name__ = endpoint
 
         if adapter == "flask":
+            # Flask não tem suporte nativo a tags, mas pode ser adicionado aos metadados da função
+            handler.tag = tag
             self.app.route(path, methods=methods, endpoint=endpoint)(handler)
             return
 
         if adapter == "fastapi":
-            self.app.add_api_route(path, handler, methods=methods, name=endpoint)
+            # FastAPI suporta tags nativamente
+            self.app.add_api_route(path, handler, methods=methods, name=endpoint, tags=[tag])
             return
 
         if adapter == "starlette":
+            # Starlette não tem suporte nativo a tags, mas pode ser adicionado aos metadados
+            handler.tag = tag
             self.app.add_route(path, handler, methods=methods, name=endpoint)
             return
 
         if adapter == "generic":
-            self.app.register_route(path=path, methods=methods, endpoint=endpoint, handler=handler)
+            route_def = {
+                "path": path,
+                "methods": methods,
+                "endpoint": endpoint,
+                "handler": handler,
+                "tag": tag
+            }
+            self.app.register_route(**route_def)
             return
 
         raise TypeError(
@@ -1601,15 +1930,8 @@ class AutoRouter:
             current_depth: Profundidade atual de recursão
             max_depth: Profundidade máxima de recursão (evita loops infinitos)
         """
-        import datetime
         def convert_value(val):
-            if isinstance(val, datetime.datetime):
-                return val.isoformat()
-            if isinstance(val, datetime.date):
-                return val.isoformat()
-            if isinstance(val, datetime.time):
-                return val.isoformat()
-            return val
+            return prepare_json_data(val)
 
         if isinstance(record_obj, dict):
             record_dict = {k: convert_value(v) for k, v in record_obj.items()}
@@ -1738,16 +2060,8 @@ class AutoRouter:
     
     def _serialize_simple(self, record_obj, field_map: Dict[str, str]) -> Dict:
         """Serializa um record simples sem processar relations recursivamente"""
-        import datetime
-        
         def convert_value(val):
-            if isinstance(val, datetime.datetime):
-                return val.isoformat()
-            if isinstance(val, datetime.date):
-                return val.isoformat()
-            if isinstance(val, datetime.time):
-                return val.isoformat()
-            return val
+            return prepare_json_data(val)
         
         if isinstance(record_obj, dict):
             return {k: convert_value(v) for k, v in record_obj.items()}
@@ -1776,16 +2090,8 @@ class AutoRouter:
             current_depth: Profundidade atual
             max_depth: Profundidade máxima
         """
-        import datetime
-        
         def convert_value(val):
-            if isinstance(val, datetime.datetime):
-                return val.isoformat()
-            if isinstance(val, datetime.date):
-                return val.isoformat()
-            if isinstance(val, datetime.time):
-                return val.isoformat()
-            return val
+            return prepare_json_data(val)
         
         # Serializa campos básicos
         if isinstance(record_obj, dict):
@@ -1951,13 +2257,13 @@ class AutoRouter:
     
     def get_registered_routes(self) -> Dict[str, List[Dict[str, str]]]:
         """
-        Retorna informações sobre todas as rotas registradas.
+        Retorna informações sobre todas as rotas registradas, agrupadas por tabela.
         
         Returns:
             Dict com formato: {
                 'table_name': [
-                    {'method': 'GET', 'endpoint': '/manager/table_name'},
-                    {'method': 'POST', 'endpoint': '/manager/table_name'},
+                    {'method': 'GET', 'endpoint': '/manager/table_name', 'tag': 'Model - Tabelas'},
+                    {'method': 'POST', 'endpoint': '/manager/table_name', 'tag': 'Model - Tabelas'},
                     ...
                 ]
             }
@@ -1984,17 +2290,17 @@ class AutoRouter:
             base_endpoint = f"/{suffix}/{table_name}"
             
             if "GET" in allowed_methods:
-                routes.append({"method": "GET", "endpoint": base_endpoint, "description": f"Listar {table_name}"})
-                routes.append({"method": "GET", "endpoint": f"{base_endpoint}/{{id}}", "description": f"Obter {table_name} por ID"})
+                routes.append({"method": "GET", "endpoint": base_endpoint, "description": f"Listar {table_name}", "tag": "Model - Tabelas"})
+                routes.append({"method": "GET", "endpoint": f"{base_endpoint}/{{id}}", "description": f"Obter {table_name} por ID", "tag": "Model - Tabelas"})
             
             if "POST" in allowed_methods:
-                routes.append({"method": "POST", "endpoint": base_endpoint, "description": f"Criar {table_name}"})
+                routes.append({"method": "POST", "endpoint": base_endpoint, "description": f"Criar {table_name}", "tag": "Model - Tabelas"})
             
             if "PATCH" in allowed_methods:
-                routes.append({"method": "PATCH", "endpoint": f"{base_endpoint}/{{id}}", "description": f"Atualizar {table_name}"})
+                routes.append({"method": "PATCH", "endpoint": f"{base_endpoint}/{{id}}", "description": f"Atualizar {table_name}", "tag": "Model - Tabelas"})
             
             if "DELETE" in allowed_methods:
-                routes.append({"method": "DELETE", "endpoint": f"{base_endpoint}/{{id}}", "description": f"Deletar {table_name}"})
+                routes.append({"method": "DELETE", "endpoint": f"{base_endpoint}/{{id}}", "description": f"Deletar {table_name}", "tag": "Model - Tabelas"})
             
             # Rotas customizadas GET
             for custom_route in table_config.get('custom_get', []):
@@ -2002,7 +2308,8 @@ class AutoRouter:
                 routes.append({
                     "method": "GET", 
                     "endpoint": f"{base_endpoint}/{route_name}", 
-                    "description": f"Rota customizada: {route_name}"
+                    "description": f"Rota customizada: {route_name}",
+                    "tag": "Model - Tabelas"
                 })
             
             # Rotas customizadas DELETE
@@ -2011,12 +2318,43 @@ class AutoRouter:
                 routes.append({
                     "method": "DELETE", 
                     "endpoint": f"{base_endpoint}/{route_name}", 
-                    "description": f"Rota customizada: {route_name}"
+                    "description": f"Rota customizada: {route_name}",
+                    "tag": "Model - Tabelas"
                 })
             
             routes_info[table_name] = routes
         
         return routes_info
+
+    def get_routes_by_tag(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Retorna todas as rotas agrupadas por TAG.
+        
+        Returns:
+            Dict com formato: {
+                'Model - Tabelas': [...],
+                'Model - Enums': [...],
+                'Model - EDTs': [...]
+            }
+        """
+        if not self.enabled:
+            return {}
+        
+        routes_by_tag = {}
+        route_definitions = self.get_route_definitions()
+        
+        for route_def in route_definitions:
+            tag = route_def.get("tag", "Model")
+            if tag not in routes_by_tag:
+                routes_by_tag[tag] = []
+            
+            routes_by_tag[tag].append({
+                "path": route_def["path"],
+                "methods": route_def["methods"],
+                "endpoint": route_def["endpoint"],
+            })
+        
+        return routes_by_tag
 
     def generate_collection(self, base_url: str = "http://localhost:5000", collection_name: str = "SQLManager_API") -> Dict[str, Any]:
         """

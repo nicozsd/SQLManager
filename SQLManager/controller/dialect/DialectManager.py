@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from ...CoreConfig import CoreConfig
-
 class DialectMixin(ABC):
     _registry = {}
 

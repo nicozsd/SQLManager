@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
+import base64
+from decimal import Decimal
+from datetime import datetime, date, time, timezone
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -18,6 +22,48 @@ except ImportError:
     SOCKETIO_AVAILABLE = False
 
 
+class _JSONEncoder(json.JSONEncoder):
+    """Codifica tipos especiais (Decimal, datetime, etc) para JSON."""
+    def default(self, obj):
+        prepared = prepare_json_data(obj)
+        if prepared is not obj:
+            return prepared
+        if hasattr(obj, '__dict__'):
+            return prepare_json_data(obj.__dict__)
+        return super().default(obj)
+
+
+def prepare_json_data(obj: Any) -> Any:
+    """Converte recursivamente tipos especiais para valores serializaveis em JSON."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+
+    if isinstance(obj, datetime):
+        if obj.tzinfo is None:
+            obj = obj.replace(tzinfo=timezone.utc)
+        return obj.isoformat()
+
+    if isinstance(obj, (date, time)):
+        return obj.isoformat()
+
+    if isinstance(obj, (bytes, bytearray, memoryview)):
+        return base64.b64encode(bytes(obj)).decode("ascii")
+
+    if isinstance(obj, dict):
+        return {key: prepare_json_data(value) for key, value in obj.items()}
+
+    if isinstance(obj, list):
+        return [prepare_json_data(value) for value in obj]
+
+    if isinstance(obj, tuple):
+        return tuple(prepare_json_data(value) for value in obj)
+
+    if isinstance(obj, set):
+        return [prepare_json_data(value) for value in obj]
+
+    return obj
+
+
 class WebSocketManager:
     """Gerencia broadcasts em tempo real usando adaptadores WebSocket comuns."""
 
@@ -27,9 +73,18 @@ class WebSocketManager:
         self.socketio = socketio
         self.enabled = bool(enabled)
         self.adapter = "disabled"
+        
+        # Para FastAPI: mantém conexões ativas
+        self._fastapi_connections: Set[Any] = set()
+        self._fastapi_room_subscriptions: Dict[str, Set[Any]] = {}
 
         if not self.enabled:
             self.socketio = None
+            return
+
+        # Detecta FastAPI WebSocket
+        if self._is_fastapi_websocket_class():
+            self.adapter = "fastapi_websocket"
             return
 
         if self.socketio is None and app is not None and SOCKETIO_AVAILABLE and SocketIO is not None:
@@ -45,6 +100,17 @@ class WebSocketManager:
 
         self.adapter = self._detect_adapter(self.socketio)
         self._register_events()
+
+    def _is_fastapi_websocket_class(self) -> bool:
+        """Detecta se socketio é uma classe FastAPI WebSocket."""
+        if self.socketio is None:
+            return False
+        try:
+            module = getattr(self.socketio, '__module__', '')
+            name = getattr(self.socketio, '__name__', '')
+            return 'starlette' in module and 'WebSocket' in name
+        except Exception:
+            return False
 
     def _detect_adapter(self, socketio: Any) -> str:
         module_name = socketio.__class__.__module__.lower()
@@ -129,8 +195,31 @@ class WebSocketManager:
         except Exception:
             return
 
+    def register_fastapi_connection(self, websocket: Any, room: str = ""):
+        """Registra uma conexão FastAPI WebSocket ativa."""
+        if self.adapter != "fastapi_websocket":
+            return
+        self._fastapi_connections.add(websocket)
+        if room:
+            if room not in self._fastapi_room_subscriptions:
+                self._fastapi_room_subscriptions[room] = set()
+            self._fastapi_room_subscriptions[room].add(websocket)
+
+    def unregister_fastapi_connection(self, websocket: Any, room: str = ""):
+        """Remove uma conexão FastAPI WebSocket."""
+        if self.adapter != "fastapi_websocket":
+            return
+        self._fastapi_connections.discard(websocket)
+        if room and room in self._fastapi_room_subscriptions:
+            self._fastapi_room_subscriptions[room].discard(websocket)
+
     def _emit(self, event: str, payload: Dict[str, Any], room: Optional[str] = None):
         if not self.enabled or not self.socketio:
+            return
+
+        # Para FastAPI: envia via async para todas as conexões no room
+        if self.adapter == "fastapi_websocket":
+            self._emit_fastapi(event, payload, room)
             return
 
         target = room or payload.get("table")
@@ -157,14 +246,55 @@ class WebSocketManager:
                 except TypeError:
                     continue
 
+        # Para FastAPI: send_json(data) async
         if hasattr(self.socketio, "send_json"):
-            result = self.socketio.send_json({"event": event, "data": payload})
-            self._run_maybe_async(result)
+            msg = json.dumps({"event": event, "data": payload}, cls=_JSONEncoder)
+            try:
+                result = self.socketio.send_json(msg)
+                self._run_maybe_async(result)
+            except TypeError:
+                # Fallback: talvez seja send_json(data) ao invés de send_json(msg)
+                try:
+                    result = self.socketio.send_json({"event": event, "data": payload})
+                    self._run_maybe_async(result)
+                except Exception:
+                    pass
             return
 
         if hasattr(self.socketio, "send"):
             result = self.socketio.send({"event": event, "data": payload})
             self._run_maybe_async(result)
+
+    def _emit_fastapi(self, event: str, payload: Dict[str, Any], room: Optional[str] = None):
+        """Emite para conexões FastAPI WebSocket ativas."""
+        import asyncio
+        
+        connections = self._fastapi_room_subscriptions.get(room, self._fastapi_connections) if room else self._fastapi_connections
+        
+        async def send_to_all():
+            msg_json = json.dumps({"event": event, "data": payload}, cls=_JSONEncoder)
+            disconnected = set()
+            for ws in list(connections):
+                try:
+                    # FastAPI WebSocket.send_json(data) é async
+                    await ws.send_json(json.loads(msg_json))
+                except Exception:
+                    disconnected.add(ws)
+            # Remove desconectadas
+            for ws in disconnected:
+                self._fastapi_connections.discard(ws)
+                for room_set in self._fastapi_room_subscriptions.values():
+                    room_set.discard(ws)
+        
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(send_to_all())
+        except RuntimeError:
+            # Sem event loop ativo - roda em novo loop
+            try:
+                asyncio.run(send_to_all())
+            except Exception:
+                pass
 
     def broadcast_insert(self, table_name: str, recid: int, data: Optional[Dict[str, Any]] = None):
         if not self.enabled:

@@ -1,7 +1,7 @@
 ''' [BEGIN CODE] Project: SQLManager Version 4.0 / issue: #6 / made by: Nicolas Santos / created: 26/02/2026 '''
 from SQLManager import CoreConfig, database_connection, SystemController
 
-# //=== DOTENV - CHECK ===//
+# DOTENV - CHECK
 
 try:
     import dotenv
@@ -14,7 +14,7 @@ import sys
 from typing  import TYPE_CHECKING
 from pathlib import Path
 
-# //=== ARGSPARSER ===//
+# ARGSPARSER
 import argparse
 parser = argparse.ArgumentParser(description="SQLManager - Gerenciador de Modelos e Conexões SQL")
 parser.add_argument("--server", help="Servidor do banco de dados", type=str)
@@ -23,9 +23,11 @@ parser.add_argument("--user", help="Usuário do banco de dados", type=str)
 parser.add_argument("--password", help="Senha do banco de dados", type=str)
 parser.add_argument("--db_type", help="Tipo do banco de dados (ex: 'mysql' ou 'sqlserver')", type=str)
 parser.add_argument("--driver", help="Driver ODBC para SQL Server (ex: 'ODBC Driver 17 for SQL Server')", type=str)
+parser.add_argument("--require_recid", help="Exige RECID BIGINT nas tabelas geradas", type=str)
+parser.add_argument("--select_use_transaction", help="Executa SELECT dentro de transaction", type=str)
 args = parser.parse_args()
 
-# //=== DIR PATHS ===//
+# DIR PATHS
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -34,7 +36,7 @@ src_dir = ROOT_DIR / "src"
 sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(ROOT_DIR))
 
-# //=== DOTENV - CHECK ===//
+# DOTENV - CHECK
 
 if(dotenv is not None):    
     dotenv.load_dotenv()
@@ -42,16 +44,21 @@ else:
     print(f"{SystemController.custom_text('Erro', 'red')}: python-dotenv não encontrado. Variáveis de ambiente do .env não serão carregadas.")
     print(f"{SystemController.custom_text('Aviso', 'yellow')}: Caso não possua env seguir a instruções do README para configuração manual.")
 
-# //=== UTILS ===//
+# UTILS
 
 from ._utils import utils as utils_class
 
 utils = utils_class()
 
+def _bool_arg(value, default=None):
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
 if utils is not None:
     utils._clear_init_files_pre_import()
 
-# //=== CONFIG ===//    
+# CONFIG
 if(dotenv is not None):
     CoreConfig.configure(
         db_server   = os.getenv('DB_SERVER'),
@@ -59,7 +66,9 @@ if(dotenv is not None):
         db_user     = os.getenv('DB_USER'),
         db_password = os.getenv('DB_PASSWORD'),
         db_driver   = os.getenv('DB_DRIVER', 'ODBC Driver 17 for SQL Server'),
-        db_type     = os.getenv('DB_TYPE', 'sqlserver')
+        db_type     = os.getenv('DB_TYPE', 'sqlserver'),
+        require_recid = _bool_arg(args.require_recid),
+        select_use_transaction = _bool_arg(args.select_use_transaction)
     )
 else:
     CoreConfig.configure(
@@ -68,7 +77,9 @@ else:
         db_user     = args.user,
         db_password = args.password,
         db_driver   = args.driver or 'ODBC Driver 17 for SQL Server',
-        db_type     = args.db_type or 'sqlserver'
+        db_type     = args.db_type or 'sqlserver',
+        require_recid = _bool_arg(args.require_recid),
+        select_use_transaction = _bool_arg(args.select_use_transaction)
     )
 
 if(CoreConfig.is_configured()):
@@ -78,7 +89,7 @@ else:
     print(f"{SystemController.custom_text('Aviso', 'yellow')}: Sem configuração válida, conexões com o banco de dados não funcionarão.")
 
 
-# //=== PATHs ===//
+# PATHS
 model_path = ROOT_DIR / "src" / "model"
 
 init_files = [
@@ -88,7 +99,7 @@ init_files = [
     model_path / "views"  / "__init__.py"            
 ]
 
-# //=== IMPORTS ===//
+# IMPORTS
 from .generators import EDTs, enums, tables
 from .managers   import View_Manager, Table_Manager, Enum_Manager, EDT_Manager
 

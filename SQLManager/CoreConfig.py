@@ -31,6 +31,12 @@ class CoreConfig:
     _db_password: Optional[str] = None
     _db_driver: str = "ODBC Driver 18 for SQL Server"
     _db_type: str = "sqlserver"
+
+    _require_recid: bool = True
+    _select_use_transaction: bool = True
+    _data_pulse_cache_enabled: bool = True
+    _data_pulse_cache_ttl: int = 45
+    _data_pulse_cache_max_entries: int = 2000
     
     _custom_regex: Dict[str, str] = {}
 
@@ -39,6 +45,23 @@ class CoreConfig:
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''
     
     _is_configured: bool = False
+
+    @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
     
     @classmethod
     def configure(cls, 
@@ -48,6 +71,11 @@ class CoreConfig:
                   db_password: Optional[str] = None,
                   db_driver: Optional[str] = None,
                   db_type: Optional[str] = None,
+                  require_recid: Optional[bool] = None,
+                  select_use_transaction: Optional[bool] = None,
+                  data_pulse_cache_enabled: Optional[bool] = None,
+                  data_pulse_cache_ttl: Optional[int] = None,
+                  data_pulse_cache_max_entries: Optional[int] = None,
                   load_from_env: bool = True):
         """
         Configura o SQLManager com as credenciais do projeto host
@@ -59,6 +87,11 @@ class CoreConfig:
             db_password: Senha do banco
             db_driver: Driver ODBC (opcional)
             db_type: Tipo do banco de dados ('sqlserver', 'mysql', etc.)
+            require_recid: Se True, model update exige RECID BIGINT nas tabelas
+            select_use_transaction: Se True, SELECT abre contexto transacional
+            data_pulse_cache_enabled: Liga ou desliga o cache interno de SELECT
+            data_pulse_cache_ttl: TTL em segundos do cache interno de SELECT
+            data_pulse_cache_max_entries: Limite de entradas do cache interno
             load_from_env: Se True, tenta carregar do .env do projeto host primeiro
         
         Exemplo:
@@ -79,6 +112,17 @@ class CoreConfig:
             env_db_type = os.getenv('DB_TYPE')
             if env_db_type and not db_type:
                 db_type = env_db_type
+
+            if require_recid is None:
+                require_recid = cls._env_bool('SQLMANAGER_REQUIRE_RECID', cls._require_recid)
+            if select_use_transaction is None:
+                select_use_transaction = cls._env_bool('SQLMANAGER_SELECT_USE_TRANSACTION', cls._select_use_transaction)
+            if data_pulse_cache_enabled is None:
+                data_pulse_cache_enabled = cls._env_bool('SQLMANAGER_CACHE_ENABLED', cls._data_pulse_cache_enabled)
+            if data_pulse_cache_ttl is None:
+                data_pulse_cache_ttl = cls._env_int('SQLMANAGER_CACHE_TTL', cls._data_pulse_cache_ttl)
+            if data_pulse_cache_max_entries is None:
+                data_pulse_cache_max_entries = cls._env_int('SQLMANAGER_CACHE_MAX_ENTRIES', cls._data_pulse_cache_max_entries)
         else:
             cls._db_server = db_server
             cls._db_database = db_database
@@ -89,6 +133,11 @@ class CoreConfig:
             cls._db_driver = db_driver
         
         cls._db_type = (db_type or "sqlserver").lower()
+        cls._require_recid = bool(cls._require_recid if require_recid is None else require_recid)
+        cls._select_use_transaction = bool(cls._select_use_transaction if select_use_transaction is None else select_use_transaction)
+        cls._data_pulse_cache_enabled = bool(cls._data_pulse_cache_enabled if data_pulse_cache_enabled is None else data_pulse_cache_enabled)
+        cls._data_pulse_cache_ttl = max(int(cls._data_pulse_cache_ttl if data_pulse_cache_ttl is None else data_pulse_cache_ttl), 1)
+        cls._data_pulse_cache_max_entries = max(int(cls._data_pulse_cache_max_entries if data_pulse_cache_max_entries is None else data_pulse_cache_max_entries), 1)
         
         cls._is_configured = True
     
@@ -112,6 +161,32 @@ class CoreConfig:
             'password': cls._db_password,
             'driver': cls._db_driver,
             'type': cls._db_type
+        }
+
+    @classmethod
+    def require_recid(cls) -> bool:
+        return cls._require_recid
+
+    @classmethod
+    def select_use_transaction(cls) -> bool:
+        return cls._select_use_transaction
+
+    @classmethod
+    def get_runtime_config(cls) -> Dict[str, Any]:
+        return {
+            'require_recid': cls._require_recid,
+            'select_use_transaction': cls._select_use_transaction,
+            'data_pulse_cache_enabled': cls._data_pulse_cache_enabled,
+            'data_pulse_cache_ttl': cls._data_pulse_cache_ttl,
+            'data_pulse_cache_max_entries': cls._data_pulse_cache_max_entries,
+        }
+
+    @classmethod
+    def get_cache_config(cls) -> Dict[str, Any]:
+        return {
+            'enabled': cls._data_pulse_cache_enabled,
+            'ttl': cls._data_pulse_cache_ttl,
+            'max_entries': cls._data_pulse_cache_max_entries,
         }
     
     @classmethod
@@ -204,6 +279,11 @@ class CoreConfig:
         cls._db_password = None
         cls._db_driver = "ODBC Driver 18 for SQL Server"
         cls._db_type = "sqlserver"
+        cls._require_recid = True
+        cls._select_use_transaction = True
+        cls._data_pulse_cache_enabled = True
+        cls._data_pulse_cache_ttl = 45
+        cls._data_pulse_cache_max_entries = 2000
         cls._custom_regex = {}
         cls._router_config = {}
         cls._is_configured = False
@@ -243,6 +323,11 @@ class CoreConfig:
             db_password=config.get('db_password'),
             db_driver=config.get('db_driver'),
             db_type=config.get('db_type'),
+            require_recid=config.get('require_recid'),
+            select_use_transaction=config.get('select_use_transaction'),
+            data_pulse_cache_enabled=config.get('data_pulse_cache_enabled'),
+            data_pulse_cache_ttl=config.get('data_pulse_cache_ttl'),
+            data_pulse_cache_max_entries=config.get('data_pulse_cache_max_entries'),
             load_from_env=config.get('load_from_env', True)
         )
         
