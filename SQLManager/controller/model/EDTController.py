@@ -59,8 +59,8 @@ class REGEX (EDT_Utils):
             "cnpj": r"^([0-9A-Z]{2}[\.]?[0-9A-Z]{3}[\.]?[0-9A-Z]{3}[\/]?[0-9A-Z]{4}[-]?[0-9]{2})$",
             "cpf": r"^([0-9]{3}[\.]?[0-9]{3}[\.]?[0-9]{3}[-]?[0-9]{2})$",
             "cep": r"^\d{5}-?\d{3}$",
-            "date": r"^[0-9]{2}[\\\/\-]?[0-9]{2}[\\\/\-]?[0-9]{4}$",
-            "datetime": r"^[0-9]{2}[\\\/\-]?[0-9]{2}[\\\/\-]?[0-9]{4}(\s+[0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$",
+            "date": r"^([0-9]{2}[\\\/\-]?[0-9]{2}[\\\/\-]?[0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+            "datetime": r"^([0-9]{2}[\\\/\-]?[0-9]{2}[\\\/\-]?[0-9]{4}(\s+[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,6})?)?)?|[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,6})?)?)?)(Z|[+-][0-9]{2}:?[0-9]{2})?$",
             "email": r"^[\w\.-]+@([\w-]+\.)+[\w-]{2,4}$",
             "IP": r"^(\d{1,3}\.){3}\d{1,3}$|^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$",
             "ipv4": r"^(\d{1,3}\.){3}\d{1,3}$",
@@ -194,6 +194,32 @@ class EDTController(EDT_Utils, OperationManager):
         if self.regex.regexId not in ["date", "datetime"]:
             return value
         
+        value = value.strip()
+
+        if self.regex.regexId == "datetime":
+            iso_value = value.replace("T", " ").removesuffix("Z")
+            try:
+                return datetime.fromisoformat(iso_value)
+            except ValueError:
+                pass
+
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S.%f",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%d",
+            ):
+                try:
+                    return datetime.strptime(iso_value, fmt)
+                except ValueError:
+                    pass
+
+        if self.regex.regexId == "date":
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
         # Remove separadores comuns
         cleaned = value.replace("/", "").replace("-", "").replace("\\", "")
         

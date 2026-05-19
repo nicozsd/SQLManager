@@ -112,8 +112,22 @@ class RelationManager:
                     raise TypeError(f"Relation ref_table_class is a module ({ref_class.__name__}) and no TableController class could be resolved")
                 self.ref_table_class = resolved
                 ref_class = resolved
+            if not self._is_concrete_table_class(ref_class):
+                raise TypeError(
+                    "Relation ref_table_class deve ser uma classe concreta de tabela, "
+                    f"recebido: {getattr(ref_class, '__name__', ref_class)}"
+                )
             self.ref_table = ref_class(self.database)
         return self.ref_table
+
+    def _is_concrete_table_class(self, candidate) -> bool:
+        from ..model import TableController
+
+        if not inspect.isclass(candidate) or not issubclass(candidate, TableController):
+            return False
+
+        candidate_name = getattr(candidate, '__name__', '')
+        return candidate is not TableController and not candidate_name.startswith('TableController_')
 
     def _resolve_table_class_from_module(self, module):
         '''
@@ -121,11 +135,17 @@ class RelationManager:
         '''
         from ..model import TableController
 
+        def is_valid_candidate(candidate):
+            return (
+                self._is_concrete_table_class(candidate)
+                and getattr(candidate, '__module__', None) == module.__name__
+            )
+
         # Tenta usar __all__ se disponível
         if hasattr(module, '__all__'):
             for name in module.__all__:
                 attr = getattr(module, name, None)
-                if inspect.isclass(attr) and issubclass(attr, TableController):
+                if is_valid_candidate(attr):
                     return attr
 
         # Busca a primeira classe pública que herda de TableController
@@ -133,7 +153,7 @@ class RelationManager:
             if name.startswith('_'):
                 continue
             attr = getattr(module, name, None)
-            if inspect.isclass(attr) and issubclass(attr, TableController):
+            if is_valid_candidate(attr):
                 return attr
 
         return None
@@ -208,7 +228,14 @@ class RelationManager:
         
         target_table = self.get_instance()
         if isinstance(self.target_field, str):
-            target_edt = target_table._get_field_instance(self.target_field)
+            try:
+                target_edt = target_table._get_field_instance(self.target_field)
+            except AttributeError as exc:
+                raise AttributeError(
+                    f"Campo de relation '{self.target_field}' nao encontrado em "
+                    f"{target_table.__class__.__name__}. Verifique se new_Relation recebeu "
+                    "a classe concreta da tabela relacionada e se o campo existe no model."
+                ) from exc
         else:
             target_edt = self.target_field
         

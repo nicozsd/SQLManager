@@ -6,6 +6,91 @@ from .. import *
 
 class View_Manager:
     '''Gerenciamento de Views'''
+
+    @staticmethod
+    def _replace_init_fields_preserving_custom_code(existing_content: str, class_name: str, new_fields: dict) -> str:
+        import re
+
+        lines = existing_content.splitlines()
+        class_pattern = re.compile(rf'^(\s*)class\s+{re.escape(class_name)}\s*\(')
+        class_index = None
+        class_indent = ""
+
+        for idx, line in enumerate(lines):
+            match = class_pattern.match(line)
+            if match:
+                class_index = idx
+                class_indent = match.group(1)
+                break
+
+        if class_index is None:
+            return existing_content
+
+        def_index = None
+        def_indent = class_indent + "    "
+        def_pattern = re.compile(rf'^{re.escape(def_indent)}def\s+__init__\s*\(')
+
+        for idx in range(class_index + 1, len(lines)):
+            line = lines[idx]
+            if line.strip() and not line.startswith(def_indent) and len(line) - len(line.lstrip()) <= len(class_indent):
+                break
+            if def_pattern.match(line):
+                def_index = idx
+                break
+
+        if def_index is None:
+            return existing_content
+
+        body_indent = def_indent + "    "
+        init_end = len(lines)
+        for idx in range(def_index + 1, len(lines)):
+            line = lines[idx]
+            if line.strip() and not line.startswith(body_indent) and len(line) - len(line.lstrip()) <= len(def_indent):
+                init_end = idx
+                break
+
+        assignment_pattern = re.compile(rf'^({re.escape(body_indent)})self\.(\w+)\s*=')
+        seen_fields = set()
+        last_field_idx = None
+        insert_after_idx = None
+
+        for idx in range(def_index + 1, init_end):
+            line = lines[idx]
+            if "super().__init__(" in line:
+                insert_after_idx = idx
+
+            match = assignment_pattern.match(line)
+            if not match:
+                continue
+
+            field_name = match.group(2).upper()
+            if field_name not in new_fields:
+                continue
+
+            lines[idx] = f"{body_indent}self.{field_name} = {new_fields[field_name]}"
+            seen_fields.add(field_name)
+            last_field_idx = idx
+
+        missing_lines = [
+            f"{body_indent}self.{field_name} = {field_def}"
+            for field_name, field_def in new_fields.items()
+            if field_name not in seen_fields
+        ]
+
+        if missing_lines:
+            if last_field_idx is not None:
+                insert_at = last_field_idx + 1
+            elif insert_after_idx is not None:
+                insert_at = insert_after_idx + 1
+                if insert_at < len(lines) and lines[insert_at].strip():
+                    missing_lines.insert(0, "")
+            else:
+                insert_at = init_end
+
+            lines[insert_at:insert_at] = missing_lines
+
+        trailing_newline = "\n" if existing_content.endswith("\n") else ""
+        return "\n".join(lines) + trailing_newline
     
     def _scan_existing_views(_model, _ShowViews: bool = False):
         '''Escaneia Views existentes no diretório'''
@@ -208,6 +293,8 @@ class View_Manager:
         removed_field_names = existing_field_names - db_field_names
         if removed_field_names:
             print(f"  - View {SystemController().custom_text(view_name, 'cyan')}: {SystemController().custom_text('Campos removidos do banco', 'red')} - {', '.join(sorted(removed_field_names))}")
+
+        return View_Manager._replace_init_fields_preserving_custom_code(existing_content, view_name, new_fields)
         
         init_end_pattern = r'(self\.\w+\s*=\s*.+?)(\n\n|\n    def |\nclass |\Z)'
         matches = list(re.finditer(init_end_pattern, existing_content, re.DOTALL))

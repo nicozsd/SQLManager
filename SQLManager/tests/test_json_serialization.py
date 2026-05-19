@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from SQLManager.controller.API.WebSocketManager import prepare_json_data
 from SQLManager.controller.managers.Relation_Manager import RelationManager
+from SQLManager.controller.SystemController import SystemController
+from SQLManager.controller.model.EDTController import EDTController
 
 
 class JsonSerializationTests(unittest.TestCase):
@@ -36,6 +38,17 @@ class JsonSerializationTests(unittest.TestCase):
         self.assertEqual(result["hour"], "12:30:15")
         self.assertEqual(result["blob"], "AAE=")
         self.assertEqual(result["items"][0]["amount"], 10.25)
+
+
+class EDTDateTimeValidationTests(unittest.TestCase):
+    def test_datetime_string_from_systemcontroller_timenow_is_accepted(self):
+        timestamp = str(SystemController.timenow())
+        field = EDTController("datetime")
+
+        field.value = timestamp
+
+        self.assertIsInstance(field.value, datetime)
+        self.assertEqual(field.value, datetime.fromisoformat(timestamp))
 
 
 class RelationRecordsTests(unittest.TestCase):
