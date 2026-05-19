@@ -1,10 +1,14 @@
 import sys
 import os
+import types
 
 # Ajuste de path para importar o SQLManager corretamente
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, os.path.dirname(parent_dir))
+
+sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
+sys.modules.setdefault("pymysql", types.ModuleType("pymysql"))
 
 from SQLManager.controller import TableController, EDTController
 
@@ -13,15 +17,19 @@ class MockTransaction:
     Simula uma transação de banco de dados para capturarmos
     as queries geradas pelo SelectManager, InsertManager, etc.
     """
-    def __init__(self):
+    def __init__(self, db_type=None):
         self.query = ""
         self.values = ()
+        self.db_type = db_type
         
     def __enter__(self):
         return self
         
     def __exit__(self, *args):
         pass
+
+    def transaction(self):
+        return self
         
     def doQuery(self, query, values=()):
         self.query = query
@@ -63,10 +71,10 @@ class MockDB:
     """
     def __init__(self, db_type):
         self.db_type = db_type
-        self.last_trs = MockTransaction()
+        self.last_trs = MockTransaction(db_type)
         
     def transaction(self):
-        self.last_trs = MockTransaction()
+        self.last_trs = MockTransaction(self.db_type)
         return self.last_trs
         
     def doQuery(self, query, values=()):
@@ -95,6 +103,10 @@ def run_dialect_tests():
         table.select().where((table.NAME == "Teste") & (table.AGE.in_([20, 25, 30]))).limit(10).offset(20).execute()
         print(f"      [QUERY]  {db.last_trs.query}")
         print(f"      [VALUES] {db.last_trs.values}")
+        expected_marker = "%s" if db_type == "mysql" else "?"
+        unexpected_marker = "?" if db_type == "mysql" else "%s"
+        assert expected_marker in db.last_trs.query
+        assert unexpected_marker not in db.last_trs.query
         
         # 2. Teste de INSERT
         print("\n  >>> Teste 2: INSERT de um novo registro")
@@ -109,14 +121,27 @@ def run_dialect_tests():
         table.update_recordset(where=table.AGE > 25, NAME="Senhora Maria")
         print(f"      [QUERY]  {db.last_trs.query}")
         print(f"      [VALUES] {db.last_trs.values}")
+        assert expected_marker in db.last_trs.query
+        assert unexpected_marker not in db.last_trs.query
             
         # 4. Teste de DELETE
         print("\n  >>> Teste 4: DELETE filtrando por RECID")
         table.delete_from().where(table.RECID == 5).execute()
         print(f"      [QUERY]  {db.last_trs.query}")
         print(f"      [VALUES] {db.last_trs.values}")
+        assert expected_marker in db.last_trs.query
+        assert unexpected_marker not in db.last_trs.query
+
+        print("\n  >>> Teste 5: Controller instanciado diretamente com Transaction")
+        with db.transaction() as trs:
+            transaction_table = UsersTable(trs)
+            transaction_table.select().where(transaction_table.NAME == "Teste").limit(1).execute()
+        print(f"      [QUERY]  {db.last_trs.query}")
+        print(f"      [VALUES] {db.last_trs.values}")
+        assert expected_marker in db.last_trs.query
+        assert unexpected_marker not in db.last_trs.query
         
-        print(f"\n  ✅ Testes do dialeto {db_type.upper()} concluídos com sucesso!\n")
+        print(f"\n  [OK] Testes do dialeto {db_type.upper()} concluídos com sucesso!\n")
         print("-" * 70)
 
 if __name__ == '__main__':

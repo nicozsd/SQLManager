@@ -20,7 +20,7 @@ class ControllerBase(DialectMixin):
     def __new__(cls, *args, **kwargs):
         # Extrai a instância do banco (posicional ou nomeada)
         db = kwargs.get('db') if 'db' in kwargs else (args[0] if args else None)
-        dialect_name = getattr(db, 'db_type', 'sqlserver') if db else 'sqlserver'
+        dialect_name = cls._resolve_db_type(db)
         
         mixin_cls = DialectMixin.resolve(dialect_name)
         
@@ -35,6 +35,17 @@ class ControllerBase(DialectMixin):
         dynamic_cls = type(dynamic_name, (mixin_cls, cls), {})
         
         return object.__new__(dynamic_cls)
+
+    @staticmethod
+    def _resolve_db_type(db) -> str:
+        if not db:
+            return 'sqlserver'
+
+        db_type = getattr(db, 'db_type', None)
+        if not db_type and hasattr(db, '_db'):
+            db_type = getattr(db._db, 'db_type', None)
+
+        return str(db_type or 'sqlserver').lower()
 
     # --- Interface Padrão (Contrato) ---
     @abstractmethod

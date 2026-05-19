@@ -303,7 +303,7 @@ class ViewController(ControllerBase):
         params = []
         
         if where:
-            where_clause, where_params = where.to_sql()
+            where_clause, where_params = where.to_sql(self.get_parameter_marker())
             query += f" WHERE {where_clause}"
             params = where_params
         

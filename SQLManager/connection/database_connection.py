@@ -97,6 +97,10 @@ class Transaction (_TTS_Manager, _Consult_Manager):
         if not self._connection:
             raise Exception("Use 'with transaction'")
         return self._connection
+
+    @property
+    def db_type(self):
+        return self._db.db_type
     
     @property
     def tts_level(self):
