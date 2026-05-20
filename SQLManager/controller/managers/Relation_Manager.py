@@ -123,11 +123,18 @@ class RelationManager:
     def _is_concrete_table_class(self, candidate) -> bool:
         from ..model import TableController
 
-        if not inspect.isclass(candidate) or not issubclass(candidate, TableController):
+        if inspect.isclass(candidate) and issubclass(candidate, TableController):
+            candidate_name = getattr(candidate, '__name__', '')
+            return candidate is not TableController and not candidate_name.startswith('TableController_')
+
+        return self._is_relation_container_class(candidate)
+
+    def _is_relation_container_class(self, candidate) -> bool:
+        if not inspect.isclass(candidate):
             return False
 
-        candidate_name = getattr(candidate, '__name__', '')
-        return candidate is not TableController and not candidate_name.startswith('TableController_')
+        required_methods = ('set_current', 'clear')
+        return all(callable(getattr(candidate, method, None)) for method in required_methods)
 
     def _resolve_table_class_from_module(self, module):
         '''

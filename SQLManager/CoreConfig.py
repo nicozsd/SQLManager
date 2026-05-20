@@ -37,6 +37,20 @@ class CoreConfig:
     _data_pulse_cache_enabled: bool = True
     _data_pulse_cache_ttl: int = 45
     _data_pulse_cache_max_entries: int = 2000
+    _data_pulse_cache_backend: str = "memory"
+    _data_pulse_cache_namespace: str = "sqlmanager"
+    _analytics_config: Dict[str, Any] = {
+        'enabled': False,
+        'url_prefix': 'analytics',
+        'auto_discover_datasets': True,
+        'datasets_modules': [
+            'model.TablePack',
+            'src.model.TablePack',
+            'model.ViewPack',
+            'src.model.ViewPack',
+        ],
+        'cache_ttl': 120,
+    }
     
     _custom_regex: Dict[str, str] = {}
 
@@ -76,6 +90,8 @@ class CoreConfig:
                   data_pulse_cache_enabled: Optional[bool] = None,
                   data_pulse_cache_ttl: Optional[int] = None,
                   data_pulse_cache_max_entries: Optional[int] = None,
+                  data_pulse_cache_backend: Optional[str] = None,
+                  data_pulse_cache_namespace: Optional[str] = None,
                   load_from_env: bool = True):
         """
         Configura o SQLManager com as credenciais do projeto host
@@ -123,6 +139,10 @@ class CoreConfig:
                 data_pulse_cache_ttl = cls._env_int('SQLMANAGER_CACHE_TTL', cls._data_pulse_cache_ttl)
             if data_pulse_cache_max_entries is None:
                 data_pulse_cache_max_entries = cls._env_int('SQLMANAGER_CACHE_MAX_ENTRIES', cls._data_pulse_cache_max_entries)
+            if data_pulse_cache_backend is None:
+                data_pulse_cache_backend = os.getenv('SQLMANAGER_CACHE_BACKEND', cls._data_pulse_cache_backend)
+            if data_pulse_cache_namespace is None:
+                data_pulse_cache_namespace = os.getenv('SQLMANAGER_CACHE_NAMESPACE', cls._data_pulse_cache_namespace)
         else:
             cls._db_server = db_server
             cls._db_database = db_database
@@ -138,6 +158,8 @@ class CoreConfig:
         cls._data_pulse_cache_enabled = bool(cls._data_pulse_cache_enabled if data_pulse_cache_enabled is None else data_pulse_cache_enabled)
         cls._data_pulse_cache_ttl = max(int(cls._data_pulse_cache_ttl if data_pulse_cache_ttl is None else data_pulse_cache_ttl), 1)
         cls._data_pulse_cache_max_entries = max(int(cls._data_pulse_cache_max_entries if data_pulse_cache_max_entries is None else data_pulse_cache_max_entries), 1)
+        cls._data_pulse_cache_backend = str(cls._data_pulse_cache_backend if data_pulse_cache_backend is None else data_pulse_cache_backend).strip().lower() or 'memory'
+        cls._data_pulse_cache_namespace = str(cls._data_pulse_cache_namespace if data_pulse_cache_namespace is None else data_pulse_cache_namespace).strip() or 'sqlmanager'
         
         cls._is_configured = True
     
@@ -179,6 +201,8 @@ class CoreConfig:
             'data_pulse_cache_enabled': cls._data_pulse_cache_enabled,
             'data_pulse_cache_ttl': cls._data_pulse_cache_ttl,
             'data_pulse_cache_max_entries': cls._data_pulse_cache_max_entries,
+            'data_pulse_cache_backend': cls._data_pulse_cache_backend,
+            'data_pulse_cache_namespace': cls._data_pulse_cache_namespace,
         }
 
     @classmethod
@@ -187,7 +211,19 @@ class CoreConfig:
             'enabled': cls._data_pulse_cache_enabled,
             'ttl': cls._data_pulse_cache_ttl,
             'max_entries': cls._data_pulse_cache_max_entries,
+            'backend': cls._data_pulse_cache_backend,
+            'namespace': cls._data_pulse_cache_namespace,
         }
+
+    @classmethod
+    def configure_analytics(cls, config: Dict[str, Any]):
+        merged = dict(cls._analytics_config)
+        merged.update(config or {})
+        cls._analytics_config = merged
+
+    @classmethod
+    def get_analytics_config(cls) -> Dict[str, Any]:
+        return dict(cls._analytics_config)
     
     @classmethod
     def register_regex(cls, regex_id: str, pattern: str):
@@ -284,6 +320,20 @@ class CoreConfig:
         cls._data_pulse_cache_enabled = True
         cls._data_pulse_cache_ttl = 45
         cls._data_pulse_cache_max_entries = 2000
+        cls._data_pulse_cache_backend = "memory"
+        cls._data_pulse_cache_namespace = "sqlmanager"
+        cls._analytics_config = {
+            'enabled': False,
+            'url_prefix': 'analytics',
+            'auto_discover_datasets': True,
+            'datasets_modules': [
+                'model.TablePack',
+                'src.model.TablePack',
+                'model.ViewPack',
+                'src.model.ViewPack',
+            ],
+            'cache_ttl': 120,
+        }
         cls._custom_regex = {}
         cls._router_config = {}
         cls._is_configured = False
@@ -328,6 +378,8 @@ class CoreConfig:
             data_pulse_cache_enabled=config.get('data_pulse_cache_enabled'),
             data_pulse_cache_ttl=config.get('data_pulse_cache_ttl'),
             data_pulse_cache_max_entries=config.get('data_pulse_cache_max_entries'),
+            data_pulse_cache_backend=config.get('data_pulse_cache_backend'),
+            data_pulse_cache_namespace=config.get('data_pulse_cache_namespace'),
             load_from_env=config.get('load_from_env', True)
         )
         
@@ -336,4 +388,7 @@ class CoreConfig:
             
         if 'router_config' in config:
             cls.configure_router(config['router_config'])        
+
+        if 'analytics_config' in config:
+            cls.configure_analytics(config['analytics_config'])
     ''' [END CODE] Project: SQLManager Version 4.0 / issue: #3 / made by: Nicolas Santos / created: 27/02/2026 '''

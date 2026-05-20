@@ -58,6 +58,7 @@ class AutoRouter:
         self.app     = app
         self.config  = CoreConfig.get_router_config()
         self.enabled = self.config.get('enable_dynamic_routes', False)
+        DataPulseCache.bind_connection(db)
         
         # Otimização: Cache de configurações normalizadas (Upper Case)
         self._exclude_tables = {t.upper() for t in self.config.get('exclude_tables', [])}                        
@@ -82,7 +83,9 @@ class AutoRouter:
         DataPulseCache.configure(
             enabled=cache_config.get('enabled', True),
             default_ttl=cache_config.get('ttl', 45),
-            max_entries=cache_config.get('max_entries', 2000)
+            max_entries=cache_config.get('max_entries', 2000),
+            backend=cache_config.get('backend'),
+            namespace=cache_config.get('namespace')
         )
         
         # WebSocket Manager (DESABILITADO por padrão - use enable_websocket=True no config)
@@ -973,6 +976,7 @@ class AutoRouter:
 
     def _execute_lookup(self, route_name: str, query_params: Dict[str, Any], lookup_config: Dict[str, Any]) -> Dict[str, Any]:
         try:
+            DataPulseCache.bind_connection(self.db)
             try:
                 limit = int(query_params.get("limit", "0") or "0")
             except Exception:

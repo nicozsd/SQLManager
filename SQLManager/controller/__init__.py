@@ -1,7 +1,7 @@
 from .API      import AutoRouter, WebSocketManager
 from .Cache    import DataPulseCache
 from .Database import DatabaseWatcher
-from .model    import EDTController, BaseEnumController, TableController, ViewController
+from .model    import EDTController, BaseEnumController, DatabaseAnalysisController, TableController, ViewController
 from .dialect  import DialectManager
 
 from .SystemController         import SystemController
@@ -9,7 +9,7 @@ from .NumberSequenceController import NumberSequenceController
 
 
 __all__ = [
-    'EDTController'   , 'BaseEnumController'      , 'TableController'  , 'ViewController',
+    'EDTController'   , 'BaseEnumController'      , 'DatabaseAnalysisController', 'TableController'  , 'ViewController',
     'SystemController', 'NumberSequenceController', 'WebSocketManager' , 'DataPulseCache',        
     'DatabaseWatcher' , 'AutoRouter'              , 'DialectManager'
 ]

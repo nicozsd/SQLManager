@@ -89,6 +89,103 @@ class SQLServerMixin(DialectMixin, dialect="sqlserver"):
             ORDER BY ORDINAL_POSITION
         """
 
+    def get_database_analysis_tables_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_tables*/
+            SELECT
+                t.name AS table_name,
+                ISNULL((
+                    SELECT SUM(p.rows)
+                    FROM sys.partitions p
+                    WHERE p.object_id = t.object_id AND p.index_id IN (0, 1)
+                ), 0) AS row_count,
+                CASE WHEN EXISTS (
+                    SELECT 1 FROM sys.key_constraints kc
+                    WHERE kc.parent_object_id = t.object_id AND kc.type = 'PK'
+                ) THEN 1 ELSE 0 END AS has_primary_key,
+                CASE WHEN EXISTS (
+                    SELECT 1 FROM sys.indexes i
+                    WHERE i.object_id = t.object_id AND i.type_desc IN ('CLUSTERED', 'CLUSTERED COLUMNSTORE')
+                ) THEN 1 ELSE 0 END AS has_clustered_index
+            FROM sys.tables t
+            WHERE t.is_ms_shipped = 0
+            ORDER BY t.name
+        """
+
+    def get_database_analysis_columns_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_columns*/
+            SELECT
+                t.name AS table_name,
+                c.name AS column_name,
+                ty.name AS data_type,
+                c.is_nullable AS is_nullable,
+                c.max_length AS max_length
+            FROM sys.tables t
+            INNER JOIN sys.columns c ON t.object_id = c.object_id
+            INNER JOIN sys.types ty ON c.user_type_id = ty.user_type_id
+            WHERE t.is_ms_shipped = 0
+            ORDER BY t.name, c.column_id
+        """
+
+    def get_database_analysis_indexes_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_indexes*/
+            SELECT
+                t.name AS table_name,
+                i.name AS index_name,
+                i.is_unique AS is_unique,
+                i.is_primary_key AS is_primary_key,
+                i.type_desc AS index_type,
+                CASE WHEN i.type_desc IN ('CLUSTERED', 'CLUSTERED COLUMNSTORE') THEN 1 ELSE 0 END AS is_clustered,
+                STRING_AGG(CASE WHEN ic.is_included_column = 0 THEN c.name END, ',') AS key_columns,
+                STRING_AGG(CASE WHEN ic.is_included_column = 1 THEN c.name END, ',') AS included_columns
+            FROM sys.tables t
+            INNER JOIN sys.indexes i ON t.object_id = i.object_id
+            LEFT JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            LEFT JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+            WHERE t.is_ms_shipped = 0 AND i.name IS NOT NULL AND i.is_hypothetical = 0
+            GROUP BY t.name, i.name, i.is_unique, i.is_primary_key, i.type_desc
+            ORDER BY t.name, i.name
+        """
+
+    def get_database_analysis_foreign_keys_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_foreign_keys*/
+            SELECT
+                tp.name AS table_name,
+                cp.name AS column_name,
+                fk.name AS foreign_key_name,
+                tr.name AS referenced_table,
+                cr.name AS referenced_column
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+            INNER JOIN sys.tables tp ON fkc.parent_object_id = tp.object_id
+            INNER JOIN sys.columns cp ON fkc.parent_object_id = cp.object_id AND fkc.parent_column_id = cp.column_id
+            INNER JOIN sys.tables tr ON fkc.referenced_object_id = tr.object_id
+            INNER JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id AND fkc.referenced_column_id = cr.column_id
+            ORDER BY tp.name, fk.name, fkc.constraint_column_id
+        """
+
+    def get_database_analysis_constraints_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_constraints*/
+            SELECT t.name AS table_name, kc.name AS constraint_name, kc.type_desc AS constraint_type
+            FROM sys.key_constraints kc
+            INNER JOIN sys.tables t ON kc.parent_object_id = t.object_id
+            WHERE t.is_ms_shipped = 0
+            UNION ALL
+            SELECT t.name AS table_name, cc.name AS constraint_name, 'CHECK_CONSTRAINT' AS constraint_type
+            FROM sys.check_constraints cc
+            INNER JOIN sys.tables t ON cc.parent_object_id = t.object_id
+            WHERE t.is_ms_shipped = 0
+            UNION ALL
+            SELECT t.name AS table_name, dc.name AS constraint_name, 'DEFAULT_CONSTRAINT' AS constraint_type
+            FROM sys.default_constraints dc
+            INNER JOIN sys.tables t ON dc.parent_object_id = t.object_id
+            WHERE t.is_ms_shipped = 0
+        """
+
     def format_table_ddl(self, content: str) -> str:
         # Remove espaços vazios, quebras de linha e a vírgula do final da string
         return content.strip().rstrip(',')

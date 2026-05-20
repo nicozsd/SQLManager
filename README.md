@@ -7,7 +7,7 @@
 <!-- Badges -->
 <p>
   <img src="https://img.shields.io/badge/Python-3.8%2B-00e5ff?style=for-the-badge&logo=python&logoColor=white&labelColor=080c14"/>
-  <img src="https://img.shields.io/badge/Version-4.3.1-7c3aed?style=for-the-badge&labelColor=080c14"/>
+    <img src="https://img.shields.io/badge/Version-5.0.0-7c3aed?style=for-the-badge&labelColor=080c14"/>
   <img src="https://img.shields.io/badge/License-Private-f59e0b?style=for-the-badge&labelColor=080c14"/>
   <img src="https://img.shields.io/badge/Status-Production-10b981?style=for-the-badge&labelColor=080c14"/>
 </p>
@@ -23,11 +23,17 @@
 
 > **Framework Python de gerenciamento de banco de dados com API fluente, AutoRouter REST e WebSocket em tempo real.**
 
+> **Versão 5.0:** camada analítica com datasets semânticos, `AnalyticsRouter` e DataPulseCache 2.0 com backend plugável.
+
 <br/>
 
 [![Início Rápido](https://img.shields.io/badge/Inicio_Rapido-080c14?style=for-the-badge)](SQLManager/documents/QUICKSTART.md)
 [![Build & Deploy](https://img.shields.io/badge/Build_/_Deploy-080c14?style=for-the-badge)](SQLManager/documents/BUILD_DEPLOY.md)
 [![Documentação](https://img.shields.io/badge/Documentacao-080c14?style=for-the-badge)](SQLManager/controller/Instructions.md)
+[![Analytics 5.0](https://img.shields.io/badge/Analytics_5.0-080c14?style=for-the-badge)](SQLManager/documents/Analytics_5.0.md)
+[![DPC 2.0](https://img.shields.io/badge/DPC_2.0-080c14?style=for-the-badge)](SQLManager/documents/DataPulseCache_5.0.md)
+[![Performance 5.0](https://img.shields.io/badge/Performance_5.0-080c14?style=for-the-badge)](SQLManager/documents/Performance_5.0.md)
+[![Database Analysis 5.0](https://img.shields.io/badge/Database_Analysis_5.0-080c14?style=for-the-badge)](SQLManager/documents/DatabaseAnalysis_5.0.md)
 
 </div>
 
@@ -60,16 +66,21 @@
 
 ## Sumário
 - [Características](#características)
+- [Novidades 5.0](#novidades-50)
 - [Instalação](#instalação)
 - [Geração de Modelos](#passo-obrigatório-gerar-os-modelos)
 - [Configuração (CoreConfig)](#coreconfig---central-de-configuração)
   - [AutoRouter](#3-configuração-do-autorouter)
+    - [Analytics](SQLManager/documents/Analytics_5.0.md)
 - [Documentação Detalhada](#documentação-detalhada)
   - [Controllers](#controllers---controladoras)
   - [Connection](#connection---conexões)
   - [AutoRouter API](#autorouter---api-rest)
   - [WebSocket Tempo Real](#websocket---atualizações-em-tempo-real)
   - [DataPulseCache e Lookup](SQLManager/documents/DataPulseCache.md)
+    - [DataPulseCache 5.0](SQLManager/documents/DataPulseCache_5.0.md)
+        - [Performance 5.0](SQLManager/documents/Performance_5.0.md)
+                - [Database Analysis 5.0](SQLManager/documents/DatabaseAnalysis_5.0.md)
 - [Uso Básico](#uso-básico)
   - [API Fluente (JOINs, CRUD)](#nova-api-fluente-v20)
   - [Transações](#transações-isoladas)
@@ -89,6 +100,12 @@
 | **EDTs & Validações** | Extended Data Types com regex customizáveis e type-safety em runtime |
 | **BaseEnums** | Enumerações tipadas com validação integrada |
 | **AutoRouter** | Geração automática de endpoints RESTful — zero boilerplate |
+| **AnalyticsRouter** | Endpoints analíticos para datasets semânticos e consultas agregadas |
+| **Semantic Datasets** | `Dataset`, `Measure`, `Hierarchy` e `SecurityPolicy` para BI operacional |
+| **DataPulseCache 2.0** | Cache com backend plugável (`memory`, `database`, `redis`), tags, invalidação por dataset e single-flight |
+| **Materialization Scheduler** | Pré-aquecimento e materialização programada de datasets semânticos |
+| **Analytics UI** | Workbench web simples para catálogo, consultas ad hoc e materialização manual |
+| **Database Analysis** | Diagnóstico opcional do banco com grid de índices, issues e DDL sugerido |
 | **Relations System** | JOIN automático com auto-população de dados relacionados |
 | **WebSocket Integrado** | Tempo real em INSERT/UPDATE/DELETE — sem configuração extra |
 | **Model Generator** | Sincroniza tabelas/views do banco para classes Python automaticamente |
@@ -96,6 +113,17 @@
 | **Tables & Views** | Controllers unificados para CRUD completo e leitura de views |
 
 </div>
+
+## Novidades 5.0
+
+- Camada `SQLManager.analytics` com registry autocadastrável e datasets semânticos.
+- `AnalyticsRouter` para FastAPI, Starlette, Flask e apps genéricos.
+- `DataPulseCache` evoluído com backend plugável (`memory`, `database` e `redis`), tags e invalidação por dataset.
+- Catálogo analítico pesquisável, scheduler nativo de materialização e UI web básica em `/analytics/ui`.
+- Harness interno de benchmark com `avg`, `median`, `p95` e `p99` para comparação honesta com Power BI.
+- `DatabaseAnalysisController` opcional para auditar qualidade transacional e BI do banco com recomendações de índices.
+- Export público de `__version__`, `Dataset`, `Measure`, `Hierarchy`, `SecurityPolicy`, `analytics_registry` e `DatabaseAnalysisController`.
+- Base preparada para BI operacional sem contaminar o fluxo transacional existente.
 
 ---
 

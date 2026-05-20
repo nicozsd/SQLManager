@@ -4,8 +4,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="SQLManager",
-    version="4.4.0",
-    description="Sistema para gerenciamento de banco de dados e validações",
+    version="5.0.0",
+    description="Framework de gerenciamento transacional e analitico com cache plugavel, AutoRouter e datasets semanticos",
     author="Avalon Tecnologia",
     author_email="nicolas.santos@avalontecnologia.com.br",
     url="https://github.com/Avalon-Tecnologia/SQLManager",
@@ -30,7 +30,10 @@ setup(
         "cryptography>=3.4.0",
         "customtkinter>=5.2.0",
         "Pillow>=10.0.0",
-    ],    
+    ],
+    extras_require={
+        "redis": ["redis>=5.0.0"],
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",

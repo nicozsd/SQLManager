@@ -82,6 +82,85 @@ class MySQLMixin(DialectMixin, dialect="mysql"):
             ORDER BY ORDINAL_POSITION
         """
 
+    def get_database_analysis_tables_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_tables*/
+            SELECT
+                t.TABLE_NAME AS table_name,
+                COALESCE(t.TABLE_ROWS, 0) AS row_count,
+                CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                    WHERE tc.TABLE_SCHEMA = DATABASE() AND tc.TABLE_NAME = t.TABLE_NAME AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                ) THEN 1 ELSE 0 END AS has_primary_key,
+                CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                    WHERE tc.TABLE_SCHEMA = DATABASE() AND tc.TABLE_NAME = t.TABLE_NAME AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                ) THEN 1 ELSE 0 END AS has_clustered_index
+            FROM INFORMATION_SCHEMA.TABLES t
+            WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE'
+            ORDER BY t.TABLE_NAME
+        """
+
+    def get_database_analysis_columns_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_columns*/
+            SELECT
+                TABLE_NAME AS table_name,
+                COLUMN_NAME AS column_name,
+                DATA_TYPE AS data_type,
+                CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS is_nullable,
+                COALESCE(CHARACTER_MAXIMUM_LENGTH, 0) AS max_length
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+            ORDER BY TABLE_NAME, ORDINAL_POSITION
+        """
+
+    def get_database_analysis_indexes_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_indexes*/
+            SELECT
+                TABLE_NAME AS table_name,
+                INDEX_NAME AS index_name,
+                CASE WHEN NON_UNIQUE = 0 THEN 1 ELSE 0 END AS is_unique,
+                CASE WHEN INDEX_NAME = 'PRIMARY' THEN 1 ELSE 0 END AS is_primary_key,
+                INDEX_TYPE AS index_type,
+                CASE WHEN INDEX_NAME = 'PRIMARY' THEN 1 ELSE 0 END AS is_clustered,
+                GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',') AS key_columns,
+                '' AS included_columns
+            FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+            GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE, INDEX_TYPE
+            ORDER BY TABLE_NAME, INDEX_NAME
+        """
+
+    def get_database_analysis_foreign_keys_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_foreign_keys*/
+            SELECT
+                TABLE_NAME AS table_name,
+                COLUMN_NAME AS column_name,
+                CONSTRAINT_NAME AS foreign_key_name,
+                REFERENCED_TABLE_NAME AS referenced_table,
+                REFERENCED_COLUMN_NAME AS referenced_column
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION
+        """
+
+    def get_database_analysis_constraints_query(self) -> str:
+        return """
+            /*sqlmanager:analysis_constraints*/
+            SELECT
+                TABLE_NAME AS table_name,
+                CONSTRAINT_NAME AS constraint_name,
+                CONSTRAINT_TYPE AS constraint_type
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE()
+            ORDER BY TABLE_NAME, CONSTRAINT_NAME
+        """
+
     def format_table_ddl(self, content: str) -> str:
         content = content.replace('[', '').replace(']', '')
         content = content.replace('IDENTITY(1,1)', 'AUTO_INCREMENT PRIMARY KEY')

@@ -278,10 +278,13 @@ class SelectManager:
             raise Exception(validate['error'])
 
         cache_config = CoreConfig.get_cache_config()
+        DataPulseCache.bind_connection(self._controller.db)
         DataPulseCache.configure(
             enabled=cache_config.get('enabled'),
             default_ttl=cache_config.get('ttl'),
-            max_entries=cache_config.get('max_entries')
+            max_entries=cache_config.get('max_entries'),
+            backend=cache_config.get('backend'),
+            namespace=cache_config.get('namespace')
         )
         
         columns = self._columns or ['*']
