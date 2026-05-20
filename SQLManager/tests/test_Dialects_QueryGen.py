@@ -11,6 +11,69 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 sys.modules.setdefault("pymysql", types.ModuleType("pymysql"))
 
 from SQLManager.controller import TableController, EDTController
+from SQLManager.connection.database_connection import Transaction, _Consult_Manager
+
+
+class RawCursorCapture:
+    def __init__(self):
+        self.executed_query = None
+        self.executed_params = None
+        self.description = [("EMAIL",)]
+
+    def execute(self, query, params=()):
+        self.executed_query = query
+        self.executed_params = params
+
+    def fetchall(self):
+        return [["teste@local"]]
+
+    def close(self):
+        pass
+
+
+class RawConnectionCapture:
+    def __init__(self):
+        self.cursor_instance = RawCursorCapture()
+        self.autocommit_value = True
+        self.committed = False
+        self.rolled_back = False
+
+    def cursor(self):
+        return self.cursor_instance
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def autocommit(self, value):
+        self.autocommit_value = value
+
+
+class RawQueryDB(_Consult_Manager):
+    def __init__(self, db_type):
+        self.db_type = db_type
+        self._connection = RawConnectionCapture()
+
+    @property
+    def connection(self):
+        return self._connection
+
+
+class RawQueryParentDB:
+    def __init__(self, db_type):
+        self.db_type = db_type
+        self._connection = RawConnectionCapture()
+
+    def _get_connection(self):
+        return self._connection
+
+    def _return_connection(self, conn):
+        pass
+
+    def _set_autocommit_on_conn(self, conn, value):
+        conn.autocommit(value)
 
 class MockTransaction:
     """
@@ -144,5 +207,26 @@ def run_dialect_tests():
         print(f"\n  [OK] Testes do dialeto {db_type.upper()} concluídos com sucesso!\n")
         print("-" * 70)
 
+
+def run_raw_query_placeholder_tests():
+    print("="*70)
+    print(" TESTES DE PLACEHOLDER EM SQL BRUTO (MYSQL) ")
+    print("="*70)
+
+    raw_db = RawQueryDB("mysql")
+    raw_db.doQuery("SELECT EMAIL FROM USERSTABLE WHERE EMAIL = ? OR USERID = ?", ("mail", "user"))
+    assert raw_db.connection.cursor_instance.executed_query == "SELECT EMAIL FROM USERSTABLE WHERE EMAIL = %s OR USERID = %s"
+    assert raw_db.connection.cursor_instance.executed_params == ("mail", "user")
+
+    parent_db = RawQueryParentDB("mysql")
+    with Transaction(parent_db) as trs:
+        trs.doQuery("SELECT EMAIL FROM USERSTABLE WHERE EMAIL = ? OR USERID = ?", ("mail", "user"))
+
+    assert parent_db._connection.cursor_instance.executed_query == "SELECT EMAIL FROM USERSTABLE WHERE EMAIL = %s OR USERID = %s"
+    assert parent_db._connection.cursor_instance.executed_params == ("mail", "user")
+
+    print("\n  [OK] SQL bruto respeita DBTYPE em conexao direta e transaction.\n")
+
 if __name__ == '__main__':
     run_dialect_tests()
+    run_raw_query_placeholder_tests()

@@ -41,11 +41,18 @@ class _Consult_Manager:
     '''
     Gerenciador de consultas (queries) e comandos (execute)
     '''
+
+    def _normalize_query_markers(self, query: str) -> str:
+        '''Ajusta placeholders para o driver ativo em execucao de SQL bruto.'''
+        db_type = str(getattr(self, 'db_type', '') or '').lower()
+        if db_type == 'mysql' and '?' in query:
+            return query.replace('?', '%s')
+        return query
     
     def doQuery(self, query: str, params: tuple = (), ret_cols: bool = False): 
         '''Realiza uma query na conexão'''
         cursor = self.connection.cursor()
-        cursor.execute(query, params)
+        cursor.execute(self._normalize_query_markers(query), params)
         results = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
         cursor.close()
@@ -55,7 +62,7 @@ class _Consult_Manager:
     def executeCommand(self, command: str, params: tuple = ()): 
         '''Executa um comando na conexão'''
         cursor = self.connection.cursor()
-        cursor.execute(command, params)
+        cursor.execute(self._normalize_query_markers(command), params)
         affected = getattr(cursor, 'rowcount', 0)
 
         if isinstance(self, database_connection):
